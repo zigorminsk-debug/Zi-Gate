@@ -1,0 +1,310 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A11A11A11A11A11A11A11A11 /* ZIGateApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11B11B11B11B11B11B11B11; };
+		A12A12A12A12A12A12A12A12 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12B12B12B12B12B12B12B12; };
+		A13A13A13A13A13A13A13A13 /* BarrierEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13B13B13B13B13B13B13B13; };
+		A14A14A14A14A14A14A14A14 /* SyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14B14B14B14B14B14B14B14; };
+		A15A15A15A15A15A15A15A15 /* Barrier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15B15B15B15B15B15B15B15; };
+		A16A16A16A16A16A16A16A16 /* BarrierStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B16B16B16B16B16B16B16B16; };
+		A17A17A17A17A17A17A17A17 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17B17B17B17B17B17B17B17; };
+		A18A18A18A18A18A18A18A18 /* LocationTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18B18B18B18B18B18B18B18; };
+		A19A19A19A19A19A19A19A19 /* Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19B19B19B19B19B19B19B19; };
+		A20A20A20A20A20A20A20A20 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B20B20B20B20B20B20B20B20; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B01B01B01B01B01B01B01B01 /* ZIGate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZIGate.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B11B11B11B11B11B11B11B11 /* ZIGateApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZIGateApp.swift; sourceTree = "<group>"; };
+		B12B12B12B12B12B12B12B12 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		B13B13B13B13B13B13B13B13 /* BarrierEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarrierEditor.swift; sourceTree = "<group>"; };
+		B14B14B14B14B14B14B14B14 /* SyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncView.swift; sourceTree = "<group>"; };
+		B15B15B15B15B15B15B15B15 /* Barrier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Barrier.swift; sourceTree = "<group>"; };
+		B16B16B16B16B16B16B16B16 /* BarrierStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarrierStore.swift; sourceTree = "<group>"; };
+		B17B17B17B17B17B17B17B17 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		B18B18B18B18B18B18B18B18 /* LocationTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationTracker.swift; sourceTree = "<group>"; };
+		B19B19B19B19B19B19B19B19 /* Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Helpers.swift; sourceTree = "<group>"; };
+		B20B20B20B20B20B20B20B20 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B21B21B21B21B21B21B21B21 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F01F01F01F01F01F01F01F01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		G00G00G00G00G00G00G00G00 = {
+			isa = PBXGroup;
+			children = (
+				G01G01G01G01G01G01G01G01 /* ZIGate */,
+				G99G99G99G99G99G99G99G99 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		G01G01G01G01G01G01G01G01 /* ZIGate */ = {
+			isa = PBXGroup;
+			children = (
+				B11B11B11B11B11B11B11B11 /* ZIGateApp.swift */,
+				B19B19B19B19B19B19B19B19 /* Helpers.swift */,
+				G02G02G02G02G02G02G02G02 /* Views */,
+				G03G03G03G03G03G03G03G03 /* Models */,
+				G04G04G04G04G04G04G04G04 /* Data */,
+				G05G05G05G05G05G05G05G05 /* Location */,
+				B20B20B20B20B20B20B20B20 /* Assets.xcassets */,
+				B21B21B21B21B21B21B21B21 /* Info.plist */,
+			);
+			path = ZIGate;
+			sourceTree = "<group>";
+		};
+		G02G02G02G02G02G02G02G02 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B12B12B12B12B12B12B12B12 /* RootView.swift */,
+				B13B13B13B13B13B13B13B13 /* BarrierEditor.swift */,
+				B14B14B14B14B14B14B14B14 /* SyncView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		G03G03G03G03G03G03G03G03 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B15B15B15B15B15B15B15B15 /* Barrier.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		G04G04G04G04G04G04G04G04 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				B16B16B16B16B16B16B16B16 /* BarrierStore.swift */,
+				B17B17B17B17B17B17B17B17 /* AppSettings.swift */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		G05G05G05G05G05G05G05G05 /* Location */ = {
+			isa = PBXGroup;
+			children = (
+				B18B18B18B18B18B18B18B18 /* LocationTracker.swift */,
+			);
+			path = Location;
+			sourceTree = "<group>";
+		};
+		G99G99G99G99G99G99G99G99 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B01B01B01B01B01B01B01B01 /* ZIGate.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		T01T01T01T01T01T01T01T01 /* ZIGate */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C02C02C02C02C02C02C02C02 /* Build configuration list for PBXNativeTarget "ZIGate" */;
+			buildPhases = (
+				P01P01P01P01P01P01P01P01 /* Sources */,
+				F01F01F01F01F01F01F01F01 /* Frameworks */,
+				R01R01R01R01R01R01R01R01 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ZIGate;
+			productName = ZIGate;
+			productReference = B01B01B01B01B01B01B01B01 /* ZIGate.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		P00P00P00P00P00P00P00P00 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					T01T01T01T01T01T01T01T01 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = C01C01C01C01C01C01C01C01 /* Build configuration list for PBXProject "ZIGate" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = ru;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				ru,
+				Base,
+			);
+			mainGroup = G00G00G00G00G00G00G00G00;
+			productRefGroup = G99G99G99G99G99G99G99G99 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				T01T01T01T01T01T01T01T01 /* ZIGate */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		R01R01R01R01R01R01R01R01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A20A20A20A20A20A20A20A20 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		P01P01P01P01P01P01P01P01 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A11A11A11A11A11A11A11A11 /* ZIGateApp.swift in Sources */,
+				A12A12A12A12A12A12A12A12 /* RootView.swift in Sources */,
+				A13A13A13A13A13A13A13A13 /* BarrierEditor.swift in Sources */,
+				A14A14A14A14A14A14A14A14 /* SyncView.swift in Sources */,
+				A15A15A15A15A15A15A15A15 /* Barrier.swift in Sources */,
+				A16A16A16A16A16A16A16A16 /* BarrierStore.swift in Sources */,
+				A17A17A17A17A17A17A17A17 /* AppSettings.swift in Sources */,
+				A18A18A18A18A18A18A18A18 /* LocationTracker.swift in Sources */,
+				A19A19A19A19A19A19A19A19 /* Helpers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		D01D01D01D01D01D01D01D01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D02D02D02D02D02D02D02D02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D03D03D03D03D03D03D03D03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ZIGate/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "ZI Gate";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.21;
+				PRODUCT_BUNDLE_IDENTIFIER = by.zakharevich.zigate;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D04D04D04D04D04D04D04D04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ZIGate/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.21;
+				PRODUCT_BUNDLE_IDENTIFIER = by.zakharevich.zigate;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C01C01C01C01C01C01C01C01 /* Build configuration list for PBXProject "ZIGate" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D01D01D01D01D01D01D01D01 /* Debug */,
+				D02D02D02D02D02D02D02D02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C02C02C02C02C02C02C02C02 /* Build configuration list for PBXNativeTarget "ZIGate" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D03D03D03D03D03D03D03D03 /* Debug */,
+				D04D04D04D04D04D04D04D04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = P00P00P00P00P00P00P00P00 /* Project object */;
+}
