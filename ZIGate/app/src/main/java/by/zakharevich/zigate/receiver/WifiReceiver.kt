@@ -22,6 +22,7 @@ class WifiReceiver : BroadcastReceiver() {
             val service = Intent(context, BarrierService::class.java)
                 .setAction(BarrierService.ACTION_REFRESH)
             runCatching { ContextCompat.startForegroundService(context, service) }
+            by.zakharevich.zigate.util.KeepAlive.schedule(context)
         }
     }
 }

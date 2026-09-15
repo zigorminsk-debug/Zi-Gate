@@ -43,6 +43,7 @@ class App : Application() {
      * activity is dismissed.
      */
     private fun installCrashReporter() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             val message = try {
                 val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
@@ -55,31 +56,30 @@ class App : Application() {
                         "thread=${thread?.name}\n" + sw.toString()
                 Log.e(TAG, log)
 
-                // Write to a file so it can be shared without adb.
                 runCatching {
                     val dir = getExternalFilesDir(null) ?: filesDir
                     File(dir, "zigate_crash.txt").appendText("\n" + log + "\n")
                     Log.i(TAG, "Crash log written to: $dir/zigate_crash.txt")
                 }
-                log
+                // Binder extra size limit — keep a readable tail.
+                if (log.length > 60_000) log.take(60_000) + "\n…truncated…" else log
             } catch (t: Throwable) {
                 "Ошибка при формировании отчёта: $t\noriginal=${throwable}"
             }
 
-            // Show it on screen so the user can report the exact message.
-            runCatching {
+            val shown = runCatching {
                 val i = Intent(this, CrashActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     .putExtra(CrashActivity.EXTRA_MESSAGE, message)
                 startActivity(i)
+            }.isSuccess
+
+            try { Thread.sleep(if (shown) 400 else 50) } catch (_: InterruptedException) {}
+
+            if (!shown) {
+                runCatching { previous?.uncaughtException(thread, throwable) }
+                android.os.Process.killProcess(android.os.Process.myPid())
             }
-
-            // Let the screen render, then stop following the normal (killing)
-            // handler. CrashActivity exits the process when dismissed.
-            try { Thread.sleep(300) } catch (_: InterruptedException) {}
-
-            // Deliberately DO NOT call previous.uncaughtException here, so the
-            // process stays alive long enough to display the error screen.
         }
     }
 

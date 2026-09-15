@@ -5,6 +5,7 @@
     <!-- Location / GPS -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- Call the barrier number automatically -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- Background / boot start -->
@@ -22,6 +23,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Ask to be exempt from battery throttling (so GPS can keep the schedule) -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Restart after OEM overnight kill -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" tools:ignore="ExactAlarm" />
     <!-- Required so ACTION_CALL (opening the phone dialer) can be started from
          the background foreground service. Grants the "background activity
          start" exemption. The user must enable it in system settings. -->
@@ -61,6 +65,7 @@
             android:name=".service.BarrierService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="location" />
 
         <!-- Restart the service after device boot -->
@@ -71,6 +76,28 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".receiver.WifiReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.net.wifi.STATE_CHANGE" />
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".receiver.KeepAliveReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="by.zakharevich.zigate.KEEP_ALIVE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.USER_PRESENT" />
             </intent-filter>
         </receiver>
 

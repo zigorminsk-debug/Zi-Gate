@@ -11,8 +11,8 @@ android {
         applicationId "by.zakharevich.zigate"
         minSdk 26
         targetSdk 34
-        versionCode 20
-        versionName "1.19"
+        versionCode 21
+        versionName "1.20"
         // Developer / signing identity.
         buildConfigField "String", "DEVELOPER", "\"Zakharevich Igor +375293371412\""
     }
@@ -70,4 +70,24 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.13'
     testImplementation 'androidx.test:core:1.6.1'
+}
+
+// After every release assemble, copy a versioned APK to ../output/
+android.applicationVariants.configureEach { variant ->
+    if (variant.buildType.name != "release") return
+    variant.assembleProvider.configure { assembleTask ->
+        assembleTask.doLast {
+            def apk = variant.outputs.find { it.outputFile.name.endsWith(".apk") }?.outputFile
+            if (apk == null || !apk.exists()) {
+                apk = file("${buildDir}/outputs/apk/release/app-release.apk")
+            }
+            if (!apk.exists()) return
+            def destDir = file("${rootProject.projectDir}/output")
+            destDir.mkdirs()
+            destDir.listFiles()?.findAll { it.name ==~ /ZI-Gate-v.*-release\.apk/ }?.each { it.delete() }
+            def dest = new File(destDir, "ZI-Gate-v${android.defaultConfig.versionName}-release.apk")
+            dest.bytes = apk.bytes
+            logger.lifecycle(">>> Release APK: ${dest}")
+        }
+    }
 }

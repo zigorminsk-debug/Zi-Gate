@@ -67,13 +67,15 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
             val locGranted =
                 result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                        result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-            val callGranted = result[Manifest.permission.CALL_PHONE] == true
+                        result[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                        hasLocationPermission()
+            val callGranted = result[Manifest.permission.CALL_PHONE] == true ||
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) ==
+                    PackageManager.PERMISSION_GRANTED
             configureBasedOnPermissions(locGranted, callGranted)
             requestBatteryExemptionIfNeeded()
-            // Overlay permission is required so the auto-call (ACTION_CALL,
-            // which opens the phone app) can be launched from the background.
             requestOverlayPermission()
+            requestBackgroundLocationIfNeeded()
         }
 
     // Result of the system "display over other apps" settings screen.
@@ -110,6 +112,10 @@ class MainActivity : AppCompatActivity() {
      *  re-fire the change listeners (which would otherwise start/stop the
      *  service on every screen refresh). */
     private var settingsRendering = false
+
+    private var freshLocListener: LocationListener? = null
+    private var freshLocHandler: Handler? = null
+    private var askedBackground = false
 
     private companion object {
         /** Fresh-location capture ("Записать/Запросить координаты"): collect
@@ -154,6 +160,11 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         BarrierService.removeListener(statusListener)
+    }
+
+    override fun onDestroy() {
+        cancelFreshLocation()
+        super.onDestroy()
     }
 
     private fun bindActions() {
@@ -209,19 +220,25 @@ class MainActivity : AppCompatActivity() {
         ) toAsk += Manifest.permission.POST_NOTIFICATIONS
 
         if (toAsk.isNotEmpty()) {
-            val request = toAsk.toTypedArray()
-            val all = arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.CALL_PHONE,
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-            // Combine everything into one flow for simplicity.
-            permLauncher.launch(combine(request, all))
+            permLauncher.launch(toAsk.toTypedArray())
         } else {
             configureBasedOnPermissions(true, true)
             requestBatteryExemptionIfNeeded()
             requestOverlayPermission()
+            requestBackgroundLocationIfNeeded()
+        }
+    }
+
+    private fun requestBackgroundLocationIfNeeded() {
+        if (askedBackground) return
+        if (Build.VERSION.SDK_INT < 29) return
+        if (!hasLocationPermission()) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        askedBackground = true
+        runCatching {
+            permLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
         }
     }
 
@@ -240,17 +257,6 @@ class MainActivity : AppCompatActivity() {
                 overlayLauncher.launch(intent)
             }
         }
-    }
-
-    private fun combine(request: Array<String>, all: Array<String>): Array<String> {
-        val set = LinkedHashSet<String>()
-        set.addAll(request)
-        set.addAll(all)
-        // Only ask for POST_NOTIFICATIONS on 33+ and location/call always.
-        val res = set.filter {
-            it != Manifest.permission.POST_NOTIFICATIONS || Build.VERSION.SDK_INT >= 33
-        }
-        return res.toTypedArray()
     }
 
     private fun configureBasedOnPermissions(locOk: Boolean, callOk: Boolean) {
@@ -284,18 +290,17 @@ class MainActivity : AppCompatActivity() {
     private fun startService(action: String) {
         val intent = Intent(this, BarrierService::class.java).setAction(action)
         runCatching { ContextCompat.startForegroundService(this, intent) }
+        by.zakharevich.zigate.util.KeepAlive.schedule(this)
     }
 
     private fun startServiceRefresh() {
-        if (ContextCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
+        if (hasLocationPermission()) {
             runCatching { startService(BarrierService.ACTION_REFRESH) }
         }
     }
 
     private fun stopServiceAndLocal() {
+        by.zakharevich.zigate.util.KeepAlive.cancel(this)
         stopService(Intent(this, BarrierService::class.java))
         BarrierService.emit(ServiceStatus.empty())
     }
@@ -637,11 +642,12 @@ class MainActivity : AppCompatActivity() {
                 .apply { setMargins((10 * d).toInt(), 0, 0, 0) })
         }
 
+        val dialog = android.app.Dialog(context, R.style.Theme_ZIGate_Dialog)
         saveBtn.setOnClickListener {
             saveBarrier(existing, name, phone, radius, repeat, lat, lng, selectedIcon[0])
-            dialogRef?.dismiss()
+            dialog.dismiss()
         }
-        cancelBtn.setOnClickListener { dialogRef?.dismiss() }
+        cancelBtn.setOnClickListener { dialog.dismiss() }
 
         // ---- assemble the dialog ----
         val root = LinearLayout(context).apply {
@@ -655,8 +661,6 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
 
-        val dialog = android.app.Dialog(context, R.style.Theme_ZIGate_Dialog)
-        dialogRef = dialog
         dialog.setContentView(root)
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         val dm = context.resources.displayMetrics
@@ -665,9 +669,6 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.attributes = lpAttrs
         dialog.show()
     }
-
-    @Volatile private var dialogRef: android.app.Dialog? = null
-
 
     private fun saveBarrier(
         existing: Barrier?,
@@ -800,13 +801,38 @@ class MainActivity : AppCompatActivity() {
                 if (done) finish()
             }
         }
+        cancelFreshLocation()
         try {
             lm.requestLocationUpdates(provider, 0L, 0f, listener!!, Looper.getMainLooper())
+            if (provider != LocationManager.NETWORK_PROVIDER &&
+                lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            ) {
+                runCatching {
+                    lm.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER, 0L, 0f, listener!!, Looper.getMainLooper()
+                    )
+                }
+            }
         } catch (e: SecurityException) {
             Toast.makeText(this, "Нет доступа к геолокации", Toast.LENGTH_SHORT).show()
             return
         }
+        freshLocListener = listener
+        freshLocHandler = handler
         handler.postDelayed({ finish() }, TIMEOUT_MS)
+    }
+
+    private fun cancelFreshLocation() {
+        freshLocHandler?.removeCallbacksAndMessages(null)
+        freshLocHandler = null
+        val l = freshLocListener
+        freshLocListener = null
+        if (l != null) {
+            runCatching {
+                val lm = getSystemService(LOCATION_SERVICE) as LocationManager
+                lm.removeUpdates(l)
+            }
+        }
     }
 
     @android.annotation.SuppressLint("MissingPermission")
@@ -941,7 +967,7 @@ class MainActivity : AppCompatActivity() {
                 ContextCompat.registerReceiver(
                     this, scanReceiver,
                     IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION),
-                    ContextCompat.RECEIVER_NOT_EXPORTED
+                    ContextCompat.RECEIVER_EXPORTED
                 )
             }
             runCatching {

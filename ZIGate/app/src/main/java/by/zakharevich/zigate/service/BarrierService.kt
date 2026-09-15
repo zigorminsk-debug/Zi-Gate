@@ -19,7 +19,9 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
+import android.telecom.TelecomManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -29,6 +31,7 @@ import by.zakharevich.zigate.data.BarrierStore
 import by.zakharevich.zigate.data.Settings
 import by.zakharevich.zigate.model.Barrier
 import by.zakharevich.zigate.util.AdaptivePolling
+import by.zakharevich.zigate.util.KeepAlive
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
 import kotlin.math.max
@@ -95,6 +98,11 @@ class BarrierService : Service() {
 
     private var barriers: MutableList<Barrier> = mutableListOf()
     private var wifiPause: Set<String> = emptySet()
+    private var lastBarrierIds: Set<String> = emptySet()
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    /** When no usable GPS arrived for this long, accept coarser network fixes. */
+    private var lastGoodGpsElapsed: Long = 0L
 
     companion object {
         const val ACTION_REFRESH = "by.zakharevich.zigate.REFRESH"
@@ -109,11 +117,15 @@ class BarrierService : Service() {
         private const val WARMUP_PERIOD_MS = 1_000L
         /** Warm-up never lasts longer than this (safety net for bad GPS). */
         private const val WARMUP_TIMEOUT_MS = 25_000L
-        /** GPS fixes coarser than this are dropped (cold-start junk). */
-        private const val GPS_FIX_ACCURACY_MAX_M = 80f
+        /** GPS fixes coarser than this are dropped (cold-start junk).
+         *  150 m: some OEM GNSS reports 90–120 m indoors and never beats 80. */
+        private const val GPS_FIX_ACCURACY_MAX_M = 150f
         /** Network fixes are allowed to be coarser: far away we only need to
          *  know the approximate distance, not the exact metre. */
-        private const val NET_FIX_ACCURACY_MAX_M = 200f
+        private const val NET_FIX_ACCURACY_MAX_M = 500f
+        /** If GPS is silent this long, take even coarser network so we are not blind. */
+        private const val GPS_STARVE_MS = 45_000L
+        private const val STARVE_NET_ACCURACY_MAX_M = 1500f
         /** Fixes older than this are dropped as stale. */
         private const val MAX_FIX_AGE_MS = 120_000L
         /** Speed (m/s) at/above which we treat the phone as really moving. */
@@ -177,33 +189,87 @@ class BarrierService : Service() {
             addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
             addAction(ConnectivityManager.CONNECTIVITY_ACTION)
         }
+        // System wifi/connectivity broadcasts require an exported receiver on API 33+.
         ContextCompat.registerReceiver(
-            this, wifiReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+            this, wifiReceiver, filter, ContextCompat.RECEIVER_EXPORTED
         )
 
         startAsForeground()
+        acquireWakeLock()
+        seedLastKnown()
+        KeepAlive.schedule(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         when (action) {
             ACTION_STOP -> {
+                KeepAlive.cancel(this)
                 stopSelf()
                 return START_NOT_STICKY
             }
             else -> {
-                // ACTION_START or refresh - loads fresh settings/barriers
+                startAsForeground()
                 barriers = BarrierStore.load(this)
-                wifiPause = if (Settings.isWifiGateEnabled(this))
-                    Settings.wifiPauseSet(this) else emptySet()
-                // Barrier set changed (edit/import) -> reset per-barrier counters.
-                consecutiveInside.clear()
+                wifiPause = wifiPauseSet()
+                val ids = barriers.map { it.id }.toSet()
+                if (ids != lastBarrierIds) {
+                    consecutiveInside.keys.retainAll(ids)
+                    lastBarrierIds = ids
+                }
                 recomputeWifiState()
+                if (!hasFix) seedLastKnown()
                 updateLocationRegistration()
                 publishStatus()
+                KeepAlive.schedule(this)
             }
         }
         return START_STICKY
+    }
+
+    private fun wifiPauseSet(): Set<String> {
+        if (!Settings.isWifiGateEnabled(this)) return emptySet()
+        val set = Settings.wifiPauseSet(this)
+        val code = Settings.pauseCode(this).trim()
+        if (code.isNotEmpty()) set.add(code)
+        return set
+    }
+
+    @SuppressLint("WakelockTimeout")
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        runCatching {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "zigate:gps").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }
+    }
+
+    private fun releaseWakeLock() {
+        runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+        wakeLock = null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun seedLastKnown() {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) return
+        val lm = lm ?: return
+        val candidates = listOfNotNull(
+            runCatching { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) }.getOrNull(),
+            runCatching { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) }.getOrNull(),
+            runCatching { lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) }.getOrNull()
+        )
+        val best = candidates.filter { isUsableLocation(it, starving = true, ignoreAge = true) }
+            .minByOrNull { if (it.hasAccuracy()) it.accuracy else 9999f }
+        if (best != null && !hasFix) {
+            acceptFix(best, fromWarmup = true)
+        }
     }
 
     // ---------------- foreground ----------------
@@ -250,9 +316,15 @@ class BarrierService : Service() {
 
     // ---------------- provider choice ----------------
     /** Distance from the stable position to the nearest barrier (m) or null. */
+    private fun hasCoords(b: Barrier): Boolean =
+        !(b.lat == 0.0 && b.lng == 0.0)
+
+    private fun enabledBarriers(): List<Barrier> =
+        barriers.filter { it.enabled && hasCoords(it) }
+
     private fun distanceToNearest(): Float? {
         if (lastLat == null || lastLng == null) return null
-        val nearest = barriers.filter { it.enabled }.minByOrNull {
+        val nearest = enabledBarriers().minByOrNull {
             AdaptivePolling.distanceMeters(lastLat!!, lastLng!!, it.lat, it.lng)
         } ?: return null
         return AdaptivePolling.distanceMeters(lastLat!!, lastLng!!, nearest.lat, nearest.lng)
@@ -280,17 +352,25 @@ class BarrierService : Service() {
         if (!gpsOk) return LocationManager.NETWORK_PROVIDER
 
         return when {
-            distToNearest == null -> LocationManager.NETWORK_PROVIDER   // cold start: cheap first
+            // Cold start / no fix: GPS first — NETWORK-only left some OEM phones blind.
+            distToNearest == null -> LocationManager.GPS_PROVIDER
             distToNearest < GPS_REGIME_M -> LocationManager.GPS_PROVIDER
             distToNearest > NET_REGIME_M -> LocationManager.NETWORK_PROVIDER
-            else -> currentProvider ?: LocationManager.NETWORK_PROVIDER // hysteresis band
+            else -> currentProvider ?: LocationManager.GPS_PROVIDER
         }
     }
 
+    private fun gpsStarving(): Boolean {
+        if (lastGoodGpsElapsed == 0L) return !hasFix
+        return SystemClock.elapsedRealtime() - lastGoodGpsElapsed > GPS_STARVE_MS
+    }
+
     /** Accuracy gate for a fix, depending on the active regime. */
-    private fun maxAcceptableAccuracy(): Float =
-        if (currentProvider == LocationManager.NETWORK_PROVIDER) NET_FIX_ACCURACY_MAX_M
-        else GPS_FIX_ACCURACY_MAX_M
+    private fun maxAcceptableAccuracy(loc: Location): Float {
+        val gps = loc.provider == LocationManager.GPS_PROVIDER
+        if (gps) return GPS_FIX_ACCURACY_MAX_M
+        return if (gpsStarving()) STARVE_NET_ACCURACY_MAX_M else NET_FIX_ACCURACY_MAX_M
+    }
 
     // ---------------- location ----------------
     /** (Re-)registers location updates. Silent: publishing the status is the
@@ -301,20 +381,20 @@ class BarrierService : Service() {
         val autoOn = Settings.isAutoEnabled(this)
         val locPermission =
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                    PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
                     PackageManager.PERMISSION_GRANTED
 
         if (!autoOn || pausedByWifi || !locPermission) {
             stopLocation()
+            releaseWakeLock()
             return
         }
+        acquireWakeLock()
 
         val dist = distanceToNearest()
         val provider = chooseProvider(dist)
 
-        // Cold start: as soon as we begin polling but still have no fix, run a
-        // short warm-up burst so the first fixes arrive promptly (otherwise the
-        // adaptive model might request a 60 s period and the first fix would
-        // wait a long time). The distance estimate then starts from real data.
         if (!hasFix && warmupRemaining == 0) {
             warmupRemaining = WARMUP_FIXES
             warmupFixes.clear()
@@ -323,22 +403,48 @@ class BarrierService : Service() {
             prevFixNanos = 0L
             prevNearestId = null
             lastRadialVelocity = 0f
-            consecutiveInside.clear()
         }
 
-        // While the warm-up burst is running we poll at the fast, fixed rate so
-        // the current position (and the distance to the nearest barrier) is
-        // measured fresh before the adaptive model picks its real period.
         val period = if (warmupRemaining > 0) WARMUP_PERIOD_MS else periodFor(provider)
-        if (registered && provider == currentProvider &&
+        val wantDual = warmupRemaining > 0 || gpsStarving() ||
+                dist == null || dist < GPS_REGIME_M
+        val dualKey = if (wantDual) "dual" else provider
+        if (registered && dualKey == currentProvider &&
             abs(period - currentIntervalMs) < 2_000
         ) return
 
         stopLocation()
         try {
-            lm.requestLocationUpdates(provider, period, 0f, locationListener, Looper.getMainLooper())
+            // Dual registration: many phones never deliver GPS if only NETWORK
+            // is subscribed (and vice versa). GPS near the gate / when starving;
+            // always keep NETWORK as a fallback.
+            if (wantDual || provider == LocationManager.GPS_PROVIDER) {
+                runCatching {
+                    if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                        lm.requestLocationUpdates(
+                            LocationManager.GPS_PROVIDER, period, 0f,
+                            locationListener, Looper.getMainLooper()
+                        )
+                    }
+                }
+            }
+            val netPeriod = if (wantDual) max(period, 5_000L) else period.coerceAtLeast(5_000L)
+            runCatching {
+                if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    lm.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER, netPeriod, 0f,
+                        locationListener, Looper.getMainLooper()
+                    )
+                }
+            }
+            runCatching {
+                lm.requestLocationUpdates(
+                    LocationManager.PASSIVE_PROVIDER, period, 0f,
+                    locationListener, Looper.getMainLooper()
+                )
+            }
             registered = true
-            currentProvider = provider
+            currentProvider = dualKey
             currentIntervalMs = period
         } catch (e: SecurityException) {
             registered = false
@@ -350,7 +456,7 @@ class BarrierService : Service() {
      *  period makes the far-distance picture refresh sooner. */
     private fun periodFor(provider: String): Long {
         val p = currentPeriod()
-        if (provider != LocationManager.NETWORK_PROVIDER) return p
+        if (provider != LocationManager.NETWORK_PROVIDER) return p // gps / dual
         val d = distanceToNearest()
         val cap = if (d == null || d > NET_FAR_BOUNDARY_M)
             NET_MAX_PERIOD_FAR_MS else NET_MAX_PERIOD_NEAR_MS
@@ -384,7 +490,7 @@ class BarrierService : Service() {
 
     private fun onLocation(loc: Location) {
         // ---- 1. Drop obviously bad fixes (stale / coarse / mock / zero). ----
-        if (!isUsableLocation(loc)) {
+        if (!isUsableLocation(loc, starving = gpsStarving())) {
             Log.d(TAG, "drop bad fix prov=${loc.provider} " +
                     "acc=${if (loc.hasAccuracy()) loc.accuracy else -1f}")
             updateLocationRegistration()
@@ -471,6 +577,9 @@ class BarrierService : Service() {
         lastAccuracy = if (loc.hasAccuracy()) loc.accuracy else null
         lastFixTimeMs = System.currentTimeMillis()
         hasFix = true
+        if (loc.provider == LocationManager.GPS_PROVIDER) {
+            lastGoodGpsElapsed = SystemClock.elapsedRealtime()
+        }
 
         val nearest = nearestBarrier()
         val distance = nearest?.let {
@@ -505,7 +614,7 @@ class BarrierService : Service() {
     }
 
     /** Sanity gate for raw fixes: rejects stale / coarse / mock / zero ones. */
-    private fun isUsableLocation(loc: Location): Boolean {
+    private fun isUsableLocation(loc: Location, starving: Boolean = false, ignoreAge: Boolean = false): Boolean {
         if (loc.latitude == 0.0 && loc.longitude == 0.0) return false
         if (loc.latitude !in -90.0..90.0 || loc.longitude !in -180.0..180.0) return false
         try {
@@ -513,6 +622,7 @@ class BarrierService : Service() {
         } catch (_: Exception) {
             // isFromMockProvider not available - ignore.
         }
+        if (!ignoreAge) {
         // Age by wall clock.
         if (loc.time == 0L) return false
         if (abs(System.currentTimeMillis() - loc.time) > MAX_FIX_AGE_MS) return false
@@ -525,18 +635,21 @@ class BarrierService : Service() {
         } catch (_: Exception) {
             // Not available - the wall-clock check above is enough.
         }
+        } // !ignoreAge
         // Coarse fixes only add jumps; the limit depends on the regime
         // (network far away is allowed to be much coarser than GPS).
         if (loc.hasAccuracy()) {
             val acc = loc.accuracy
-            if (!acc.isFinite() || acc <= 0f || acc > maxAcceptableAccuracy()) return false
+            val maxAcc = if (starving && loc.provider != LocationManager.GPS_PROVIDER)
+                STARVE_NET_ACCURACY_MAX_M else maxAcceptableAccuracy(loc)
+            if (!acc.isFinite() || acc <= 0f || acc > maxAcc) return false
         }
         return true
     }
 
     private fun nearestBarrier(): Barrier? =
         if (lastLat == null || lastLng == null) null
-        else barriers.filter { it.enabled }
+        else enabledBarriers()
             .minByOrNull {
                 AdaptivePolling.distanceMeters(
                     lastLat!!, lastLng!!, it.lat, it.lng
@@ -557,7 +670,7 @@ class BarrierService : Service() {
         val acc = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
         var changed = false
         for (b in barriers) {
-            if (!b.enabled) continue
+            if (!b.enabled || !hasCoords(b)) continue
             val d = AdaptivePolling.distanceMeters(loc.latitude, loc.longitude, b.lat, b.lng)
             // Per-barrier repeat interval: while we stay inside the zone, re-dial
             // after b.repeatIntervalSec (5s..3min). Leave the zone -> reset, so
@@ -616,16 +729,23 @@ class BarrierService : Service() {
             Log.w(TAG, "placeCall: CALL_PHONE permission not granted")
             return false
         }
+        val uri = Uri.parse("tel:$number")
+        val telecomOk = runCatching {
+            val tm = getSystemService(TELECOM_SERVICE) as? TelecomManager
+            if (tm != null) {
+                tm.placeCall(uri, android.os.Bundle())
+                Log.i(TAG, "placeCall: TelecomManager.placeCall $number")
+                true
+            } else false
+        }.getOrDefault(false)
+        if (telecomOk) return true
         return try {
-            val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$number"))
+            val intent = Intent(Intent.ACTION_CALL, uri)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
             startActivity(intent)
             Log.i(TAG, "placeCall: ACTION_CALL launched for $number")
             true
         } catch (e: SecurityException) {
-            // Likely the background activity-start restriction: the phone app
-            // could not be launched from the background. Grant "display over
-            // other apps" (SYSTEM_ALERT_WINDOW) to fix this.
             Log.e(TAG, "placeCall: SecurityException launching dialer (enable 'Display over other apps' permission): ${e.message}")
             false
         } catch (e: Exception) {
@@ -716,7 +836,9 @@ class BarrierService : Service() {
 
     override fun onDestroy() {
         stopLocation()
+        releaseWakeLock()
         runCatching { unregisterReceiver(wifiReceiver) }
+        KeepAlive.schedule(this)
         super.onDestroy()
     }
 

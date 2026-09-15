@@ -44,12 +44,16 @@ object BarrierStore {
     fun import(context: Context, json: String): Int {
         val arr = JSONArray(json)
         val list = load(context).toMutableList()
-        val existing = list.map { it.id }.toHashSet()
+        val byId = list.mapIndexed { idx, b -> b.id to idx }.toMap().toMutableMap()
         for (i in 0 until arr.length()) {
             val b = Barrier.fromJson(arr.getJSONObject(i))
-            if (b.id !in existing) {
+            val idx = byId[b.id]
+            if (idx == null) {
+                byId[b.id] = list.size
                 list.add(b)
-                existing.add(b.id)
+            } else {
+                val old = list[idx]
+                list[idx] = b.copy(lastTriggeredAt = old.lastTriggeredAt)
             }
         }
         save(context, list)

@@ -5,13 +5,13 @@ import android.content.Context
 import android.content.Intent
 import by.zakharevich.zigate.util.KeepAlive
 
-/** Starts the tracking service every time the device boots. */
-class BootReceiver : BroadcastReceiver() {
+/** Periodic alarm + package-replaced: bring the tracking service back. */
+class KeepAliveReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action
-        if (action == Intent.ACTION_BOOT_COMPLETED ||
-            action == Intent.ACTION_LOCKED_BOOT_COMPLETED ||
-            action == "android.intent.action.QUICKBOOT_POWERON"
+        val a = intent.action ?: return
+        if (a == KeepAlive.ACTION ||
+            a == Intent.ACTION_MY_PACKAGE_REPLACED ||
+            a == Intent.ACTION_USER_PRESENT
         ) {
             KeepAlive.startServiceIfNeeded(context)
         }
