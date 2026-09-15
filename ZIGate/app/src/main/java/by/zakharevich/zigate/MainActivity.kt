@@ -800,6 +800,10 @@ class MainActivity : AppCompatActivity() {
                         count >= MAX_FIXES
                 if (done) finish()
             }
+            @Deprecated("Deprecated in Java")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
         }
         cancelFreshLocation()
         try {
@@ -837,10 +841,7 @@ class MainActivity : AppCompatActivity() {
 
     @android.annotation.SuppressLint("MissingPermission")
     private fun lastKnownLocation(): Location? {
-        if (ContextCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) return null
+        if (!hasLocationPermission()) return null
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
         return runCatching {
             (lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)

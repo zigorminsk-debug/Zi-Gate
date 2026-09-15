@@ -175,8 +175,12 @@ class BarrierService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private val locationListener = LocationListener { loc ->
-        onLocation(loc)
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(loc: Location) { onLocation(loc) }
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
     }
 
     override fun onCreate() {
@@ -732,7 +736,11 @@ class BarrierService : Service() {
         val uri = Uri.parse("tel:$number")
         val telecomOk = runCatching {
             val tm = getSystemService(TELECOM_SERVICE) as? TelecomManager
+<<<<<<< HEAD
             if (tm != null) {
+=======
+            if (tm != null && Build.VERSION.SDK_INT >= 23) {
+>>>>>>> 66bc3337 (Support Android 7–11 (minSdk 24).)
                 tm.placeCall(uri, android.os.Bundle())
                 Log.i(TAG, "placeCall: TelecomManager.placeCall $number")
                 true
@@ -774,7 +782,8 @@ class BarrierService : Service() {
         // Android 10+ : read the SSID via ConnectivityManager + NetworkCapabilities.
         // This is far more reliable than WifiManager.connectionInfo, which often
         // returns "<unknown ssid>" or null without location enabled.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // getTransportInfo() exists only from API 31; calling it on 10/11 is NoSuchMethodError.
+        if (Build.VERSION.SDK_INT >= 31) {
             try {
                 val cm = cm ?: return null
                 val network = cm.activeNetwork ?: return null
@@ -784,7 +793,7 @@ class BarrierService : Service() {
                     val ssid = info.ssid?.trim('"')
                     if (!ssid.isNullOrEmpty() && ssid != "<unknown ssid>") return ssid
                 }
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 // fall through to the legacy path
             }
         }
