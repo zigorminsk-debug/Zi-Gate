@@ -119,14 +119,6 @@
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switch_auto"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="@string/label_enable_auto"
-                    android:textColor="@color/text_primary" />
-
                 <TextView
                     android:id="@+id/tv_overlay_warning"
                     android:layout_width="match_parent"

@@ -13,7 +13,7 @@ object Settings {
 
     // ---------- auto open ----------
     fun isAutoEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_AUTO, false)
+        prefs(context).getBoolean(KEY_AUTO, true)
 
     fun setAutoEnabled(context: Context, value: Boolean) =
         prefs(context).edit().putBoolean(KEY_AUTO, value).apply()

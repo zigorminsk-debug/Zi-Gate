@@ -91,6 +91,14 @@
         </receiver>
 
         <receiver
+            android:name=".receiver.CallPromptReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="by.zakharevich.zigate.CALL_NOW" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".receiver.KeepAliveReceiver"
             android:enabled="true"
             android:exported="true">

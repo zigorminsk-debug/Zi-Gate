@@ -700,12 +700,19 @@ class BarrierService : Service() {
                     continue
                 }
                 if (now - b.lastTriggeredAt > intervalMs) {
-                    Log.i(TAG, "In zone: '${b.name}' d=${d.toInt()}m radius=${b.radius.toInt()}m -> dial ${b.phone} (repeat ${b.repeatIntervalSec}s)")
-                    if (placeCall(b.phone)) {
+                    if (b.autoCall) {
+                        Log.i(TAG, "In zone: '${b.name}' d=${d.toInt()}m -> auto dial ${b.phone}")
+                        if (placeCall(b.phone)) {
+                            b.lastTriggeredAt = now
+                            changed = true
+                        } else {
+                            Log.w(TAG, "Call to '${b.phone}' was NOT placed.")
+                        }
+                    } else {
+                        Log.i(TAG, "In zone: '${b.name}' auto-call off -> notify")
+                        showCallPrompt(b)
                         b.lastTriggeredAt = now
                         changed = true
-                    } else {
-                        Log.w(TAG, "Call to '${b.phone}' was NOT placed. Check CALL_PHONE permission and the overlay (display over other apps) permission.")
                     }
                 }
             } else {
@@ -719,6 +726,29 @@ class BarrierService : Service() {
             }
         }
         if (changed) BarrierStore.save(this, barriers)
+    }
+
+    private fun showCallPrompt(b: Barrier) {
+        val phone = b.phone.trim()
+        if (phone.isEmpty()) return
+        val callIntent = Intent(this, by.zakharevich.zigate.receiver.CallPromptReceiver::class.java)
+            .setAction(by.zakharevich.zigate.receiver.CallPromptReceiver.ACTION_CALL_NOW)
+            .putExtra(by.zakharevich.zigate.receiver.CallPromptReceiver.EXTRA_PHONE, phone)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val callPi = PendingIntent.getBroadcast(this, b.id.hashCode(), callIntent, flags)
+        val notif = NotificationCompat.Builder(this, App.CHANNEL_PROMPT)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(getString(R.string.notif_call_title, b.name))
+            .setContentText(getString(R.string.notif_call_body, phone))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(callPi)
+            .addAction(0, getString(R.string.notif_call_action), callPi)
+            .build()
+        runCatching {
+            androidx.core.app.NotificationManagerCompat.from(this)
+                .notify(2000 + (b.id.hashCode() and 0x0fff), notif)
+        }
     }
 
     @SuppressLint("MissingPermission")

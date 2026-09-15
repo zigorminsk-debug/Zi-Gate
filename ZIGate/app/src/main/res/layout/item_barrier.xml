@@ -89,6 +89,14 @@
 
         <!-- Record the current position as this barrier's geo-point while
              standing next to it. -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_auto_call"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/label_card_auto"
+            android:textColor="@color/text_primary" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_record_coord"
             android:layout_width="match_parent"

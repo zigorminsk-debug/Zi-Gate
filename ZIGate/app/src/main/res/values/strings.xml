@@ -35,6 +35,11 @@
 
     <string name="section_settings">Настройки</string>
     <string name="label_enable_auto">Автоматическое открытие</string>
+    <string name="label_card_auto">Автозвонок</string>
+    <string name="notif_call_channel">Запрос звонка</string>
+    <string name="notif_call_title">ZI Gate: %1$s</string>
+    <string name="notif_call_body">Вы в зоне шлагбаума. Позвонить на %1$s?</string>
+    <string name="notif_call_action">Позвонить</string>
     <string name="overlay_warning">⚠ Для автозвонка из фона включите «Поверх других приложений» для ZI Gate (Настройки → Приложения → ZI Gate → Поверх других приложений).</string>
     <string name="overlay_warning_short">Включите «Поверх других приложений», иначе автозвонок из фона не сработает.</string>
     <string name="label_wifi_gate">Пауза опроса при подключении к этой Wi-Fi сети</string>

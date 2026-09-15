@@ -174,14 +174,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_sync)
             .setOnClickListener { showSyncDialog() }
 
-        findViewById<SwitchMaterial>(R.id.switch_auto)
-            .setOnCheckedChangeListener { _, checked ->
-                if (settingsRendering) return@setOnCheckedChangeListener
-                Settings.setAutoEnabled(this, checked)
-                if (checked) startService(BarrierService.ACTION_START)
-                else stopServiceAndLocal()
-                renderSettings()
-            }
+        Settings.setAutoEnabled(this, true)
+        startService(BarrierService.ACTION_START)
 
         findViewById<SwitchMaterial>(R.id.switch_wifi_gate)
             .setOnCheckedChangeListener { _, checked ->
@@ -262,12 +256,9 @@ class MainActivity : AppCompatActivity() {
     private fun configureBasedOnPermissions(locOk: Boolean, callOk: Boolean) {
         if (!locOk) Toast.makeText(this, "Нет доступа к геолокации", Toast.LENGTH_LONG).show()
         if (!callOk) Toast.makeText(this, "Нет доступа к звонкам", Toast.LENGTH_LONG).show()
-        // The switch can only be on if location is granted.
-        val sw = findViewById<SwitchMaterial>(R.id.switch_auto)
-        if (!locOk && sw.isChecked) {
-            sw.isChecked = false
-            Settings.setAutoEnabled(this, false)
-            stopServiceAndLocal()
+        if (locOk) {
+            Settings.setAutoEnabled(this, true)
+            startService(BarrierService.ACTION_START)
         }
     }
 
@@ -385,6 +376,20 @@ class MainActivity : AppCompatActivity() {
             startServiceRefresh()
         }
         // Record the current GPS point as this barrier's coordinates.
+        val autoSw = item.findViewById<SwitchMaterial>(R.id.switch_auto_call)
+        autoSw.setOnCheckedChangeListener(null)
+        autoSw.isChecked = b.autoCall
+        autoSw.setOnCheckedChangeListener { _, checked ->
+            val list = BarrierStore.load(this).toMutableList()
+            val idx = list.indexOfFirst { it.id == b.id }
+            if (idx >= 0) {
+                list[idx] = list[idx].copy(autoCall = checked)
+                BarrierStore.save(this, list)
+                barriersCache = list
+            }
+            startServiceRefresh()
+            renderSettings()
+        }
         item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_record_coord)
             .setOnClickListener { recordCoordinates(b) }
     }
@@ -705,6 +710,7 @@ class MainActivity : AppCompatActivity() {
                 lng = if (lat != 0.0 || lng != 0.0) lng else existing.lng,
                 radius = r,
                 enabled = existing.enabled,
+                autoCall = existing.autoCall,
                 lastTriggeredAt = existing.lastTriggeredAt,
                 repeatIntervalSec = rep,
                 icon = ic
@@ -1006,7 +1012,6 @@ class MainActivity : AppCompatActivity() {
     private fun renderSettings() {
         settingsRendering = true
         try {
-            findViewById<SwitchMaterial>(R.id.switch_auto).isChecked = Settings.isAutoEnabled(this)
             findViewById<SwitchMaterial>(R.id.switch_wifi_gate).isChecked = Settings.isWifiGateEnabled(this)
             findViewById<TextInputEditText>(R.id.et_pause_code).setText(Settings.pauseCode(this))
         } finally {
@@ -1022,7 +1027,8 @@ class MainActivity : AppCompatActivity() {
         // background (the phone app can't be launched from a foreground
         // service without the "display over other apps" permission).
         val overlay = findViewById<TextView>(R.id.tv_overlay_warning)
-        if (Build.VERSION.SDK_INT >= 23 && Settings.isAutoEnabled(this) && !hasOverlayPermission()) {
+        val anyAuto = BarrierStore.load(this).any { it.autoCall }
+        if (Build.VERSION.SDK_INT >= 23 && anyAuto && !hasOverlayPermission()) {
             overlay.visibility = View.VISIBLE
         } else {
             overlay.visibility = View.GONE

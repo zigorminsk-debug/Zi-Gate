@@ -15,6 +15,8 @@ data class Barrier(
     var lng: Double,
     var radius: Float,
     var enabled: Boolean = true,
+    /** Direct auto-call when entering the zone. If false, a confirm notification is shown. */
+    var autoCall: Boolean = true,
     // Time (ms) of the last automatically triggered call – used as a cooldown.
     var lastTriggeredAt: Long = 0L,
     // How often to re-dial while the phone stays inside the zone (in seconds).
@@ -31,6 +33,7 @@ data class Barrier(
         put("lng", lng)
         put("radius", radius.toDouble())
         put("enabled", enabled)
+        put("autoCall", autoCall)
         put("lastTriggeredAt", lastTriggeredAt)
         put("repeatIntervalSec", repeatIntervalSec)
         put("icon", icon)
@@ -45,6 +48,7 @@ data class Barrier(
             lng = o.optDouble("lng", 0.0),
             radius = o.optDouble("radius", 30.0).toFloat(),
             enabled = o.optBoolean("enabled", true),
+            autoCall = o.optBoolean("autoCall", true),
             lastTriggeredAt = o.optLong("lastTriggeredAt", 0L),
             repeatIntervalSec = o.optInt("repeatIntervalSec", 60),
             icon = o.optString("icon", "gate1")
