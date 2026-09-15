@@ -47,10 +47,13 @@ import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.util.Base64
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
@@ -148,6 +151,13 @@ class MainActivity : AppCompatActivity() {
         runCatching { renderSettings() }
         runCatching { renderStatus(ServiceStatus.empty()) }
         runCatching { requestCriticalPermissions() }
+        runCatching { handleIncomingIntent(intent) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
     }
 
     override fun onStart() {
@@ -1077,6 +1087,97 @@ class MainActivity : AppCompatActivity() {
             d0 < 1000 -> "$d0 м"
             else -> "%.1f км".format(d / 1000f)
         }
+    }
+
+    // ---------------- share one barrier ----------------
+    private fun shareBarrier(b: Barrier) {
+        val payload = b.toShareJson().toString()
+        val encoded = Base64.encodeToString(
+            payload.toByteArray(Charsets.UTF_8),
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+        val link = "zigate://barrier?d=$encoded"
+        val text = getString(R.string.share_text, b.name, b.phone, link)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "ZI Gate: ${b.name}")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, getString(R.string.share_chooser)))
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        val fromView = intent.data?.toString()
+        val fromSend = if (intent.action == Intent.ACTION_SEND)
+            intent.getStringExtra(Intent.EXTRA_TEXT) else null
+        val raw = fromView ?: fromSend ?: return
+        val b = parseSharedBarrier(raw) ?: run {
+            if (fromView != null || raw.contains("zigate://barrier")) {
+                Toast.makeText(this, R.string.share_bad, Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        confirmImportBarrier(b)
+    }
+
+    private fun parseSharedBarrier(raw: String): Barrier? {
+        val marker = "zigate://barrier"
+        val idx = raw.indexOf(marker)
+        if (idx >= 0) {
+            val rest = raw.substring(idx)
+            val q = rest.indexOf("d=")
+            if (q < 0) return null
+            var token = rest.substring(q + 2)
+            token = token.takeWhile { it != '\n' && it != ' ' && it != '&' }.trim()
+            return decodeShareToken(token)
+        }
+        // Plain JSON object or array from clipboard-style share
+        return try {
+            val t = raw.trim()
+            when {
+                t.startsWith("{") -> Barrier.fromShareJson(JSONObject(t))
+                t.startsWith("[") -> {
+                    val arr = JSONArray(t)
+                    if (arr.length() == 0) null
+                    else Barrier.fromShareJson(arr.getJSONObject(0))
+                }
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun decodeShareToken(token: String): Barrier? = try {
+        val padded = token + "=".repeat((4 - token.length % 4) % 4)
+        val json = String(Base64.decode(padded, Base64.URL_SAFE), Charsets.UTF_8)
+        Barrier.fromShareJson(JSONObject(json))
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun confirmImportBarrier(b: Barrier) {
+        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
+            .setTitle(R.string.share_import_title)
+            .setMessage(
+                getString(
+                    R.string.share_import_msg,
+                    b.name,
+                    b.phone.ifBlank { "—" },
+                    b.radius.toInt()
+                )
+            )
+            .setNegativeButton(R.string.btn_cancel, null)
+            .setPositiveButton(R.string.btn_add) { _, _ ->
+                val list = BarrierStore.load(this).toMutableList()
+                list.add(b)
+                BarrierStore.save(this, list)
+                renderBarriers()
+                startServiceRefresh()
+                Toast.makeText(this, R.string.share_imported, Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     // ---------------- sync (send / receive) ----------------

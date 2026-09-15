@@ -39,7 +39,33 @@ data class Barrier(
         put("icon", icon)
     }
 
+    /** Compact JSON for sharing (no id / lastTriggered). */
+    fun toShareJson(): JSONObject = JSONObject().apply {
+        put("name", name)
+        put("phone", phone)
+        put("lat", lat)
+        put("lng", lng)
+        put("radius", radius.toDouble())
+        put("autoCall", autoCall)
+        put("repeatIntervalSec", repeatIntervalSec)
+        put("icon", icon)
+    }
+
     companion object {
+        fun fromShareJson(o: JSONObject): Barrier = Barrier(
+            id = UUID.randomUUID().toString(),
+            name = o.optString("name", "Шлагбаум"),
+            phone = o.optString("phone", ""),
+            lat = o.optDouble("lat", 0.0),
+            lng = o.optDouble("lng", 0.0),
+            radius = o.optDouble("radius", 30.0).toFloat(),
+            enabled = true,
+            autoCall = o.optBoolean("autoCall", true),
+            lastTriggeredAt = 0L,
+            repeatIntervalSec = o.optInt("repeatIntervalSec", 60),
+            icon = o.optString("icon", "gate1")
+        )
+
         fun fromJson(o: JSONObject): Barrier = Barrier(
             id = o.optString("id", UUID.randomUUID().toString()),
             name = o.optString("name", "Шлагбаум"),

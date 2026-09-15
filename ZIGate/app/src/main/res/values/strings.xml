@@ -22,6 +22,14 @@
     <string name="btn_save">Сохранить</string>
     <string name="btn_delete">Удалить</string>
     <string name="btn_edit">Редактировать</string>
+    <string name="btn_share">Поделиться</string>
+    <string name="share_text">Шлагбаум «%1$s» для ZI Gate\nНомер: %2$s\nОткройте ссылку в приложении ZI Gate:\n%3$s</string>
+    <string name="share_chooser">Поделиться шлагбаумом</string>
+    <string name="share_import_title">Добавить шлагбаум?</string>
+    <string name="share_import_msg">%1$s\n☎ %2$s\nРадиус %3$d м</string>
+    <string name="share_imported">Шлагбаум добавлен</string>
+    <string name="share_bad">Не удалось прочитать шлагбаум</string>
+    <string name="btn_add">Добавить</string>
     <string name="btn_record_coord">Записать координаты</string>
     <string name="toast_coord_recorded">Координаты записаны</string>
     <string name="toast_coord_recorded_acc">Координаты записаны (точность ±%1$d м)</string>
