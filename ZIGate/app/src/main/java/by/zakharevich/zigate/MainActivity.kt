@@ -188,9 +188,11 @@ class MainActivity : AppCompatActivity() {
             .setOnClickListener { showAddBarrierDialog() }
 
         findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_send_file)
-            .setOnClickListener { sendBarriersFile() }
+            .setOnClickListener { showSendPicker() }
         findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_receive_file)
             .setOnClickListener { pickBarriersFile() }
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_help)
+            .setOnClickListener { showHelp() }
 
         Settings.setAutoEnabled(this, true)
         startService(BarrierService.ACTION_START)
@@ -1095,12 +1097,82 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---------------- send / receive file ----------------
-    private fun sendBarriersFile() {
+    private fun showHelp() {
+        val tv = TextView(this).apply {
+            text = getString(R.string.help_body)
+            textSize = 15f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+            val p = (16 * resources.displayMetrics.density).toInt()
+            setPadding(p, p, p, p)
+        }
+        val scroll = ScrollView(this).apply { addView(tv) }
+        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
+            .setTitle(R.string.help_title)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showSendPicker() {
         val list = BarrierStore.load(this)
         if (list.isEmpty()) {
             Toast.makeText(this, R.string.empty_list, Toast.LENGTH_SHORT).show()
             return
         }
+        val density = resources.displayMetrics.density
+        val m = (16 * density).toInt()
+        val checked = MutableList(list.size) { true }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(m, m, m, 0)
+        }
+        val boxes = mutableListOf<CheckBox>()
+        fun applyAll(on: Boolean) {
+            boxes.forEach { it.isChecked = on }
+        }
+        val toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val allBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.btn_select_all)
+            isAllCaps = false
+            setOnClickListener { applyAll(true) }
+        }
+        val noneBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.btn_select_none)
+            isAllCaps = false
+            setOnClickListener { applyAll(false) }
+        }
+        toolbar.addView(allBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        toolbar.addView(noneBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            .apply { setMargins((8 * density).toInt(), 0, 0, 0) })
+        column.addView(toolbar)
+        for (i in list.indices) {
+            val b = list[i]
+            val cb = CheckBox(this).apply {
+                text = "${b.name.trim().ifBlank { "Шлагбаум" }}  ·  ${b.phone}"
+                isChecked = true
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+                setOnCheckedChangeListener { _, on -> checked[i] = on }
+            }
+            boxes.add(cb)
+            column.addView(cb)
+        }
+        val scroll = ScrollView(this).apply { addView(column) }
+        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
+            .setTitle(R.string.send_pick_title)
+            .setView(scroll)
+            .setNegativeButton(R.string.btn_cancel, null)
+            .setPositiveButton(R.string.btn_send_file) { _, _ ->
+                val picked = list.filterIndexed { i, _ -> checked[i] }
+                if (picked.isEmpty()) {
+                    Toast.makeText(this, R.string.send_none, Toast.LENGTH_SHORT).show()
+                } else {
+                    sendBarriersFile(picked)
+                }
+            }
+            .show()
+    }
+
+    private fun sendBarriersFile(list: List<Barrier>) {
         val json = JSONArray().apply { list.forEach { put(it.toShareJson()) } }.toString()
         val dir = File(cacheDir, "share").apply { mkdirs() }
         val file = File(dir, "ZI-Gate-shlagbaumy.zigate")
