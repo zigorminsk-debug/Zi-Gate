@@ -736,11 +736,7 @@ class BarrierService : Service() {
         val uri = Uri.parse("tel:$number")
         val telecomOk = runCatching {
             val tm = getSystemService(TELECOM_SERVICE) as? TelecomManager
-<<<<<<< HEAD
-            if (tm != null) {
-=======
             if (tm != null && Build.VERSION.SDK_INT >= 23) {
->>>>>>> 66bc3337 (Support Android 7–11 (minSdk 24).)
                 tm.placeCall(uri, android.os.Bundle())
                 Log.i(TAG, "placeCall: TelecomManager.placeCall $number")
                 true
