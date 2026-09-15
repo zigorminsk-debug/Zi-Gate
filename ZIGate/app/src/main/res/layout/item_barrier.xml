@@ -6,6 +6,8 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="8dp"
+    android:clickable="false"
+    android:focusable="false"
     app:cardBackgroundColor="@color/primary_light"
     app:cardCornerRadius="12dp"
     app:cardElevation="0dp">
@@ -35,30 +37,42 @@
                 android:orientation="vertical">
                 <TextView
                     android:id="@+id/name"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:singleLine="true"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
                 <TextView
                     android:id="@+id/phone"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:singleLine="true"
                     android:textColor="@color/text_secondary"
                     android:textSize="14sp" />
                 <TextView
                     android:id="@+id/radius"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:singleLine="true"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
                 <TextView
                     android:id="@+id/repeat"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:singleLine="true"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
             </LinearLayout>
@@ -66,17 +80,12 @@
                 android:id="@+id/distance"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:maxLines="1"
+                android:singleLine="true"
                 android:textColor="@color/primary"
                 android:textSize="16sp"
                 android:textStyle="bold" />
-            <ImageButton
-                android:id="@+id/btn_share"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:layout_marginStart="4dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/btn_share"
-                android:src="@drawable/ic_share" />
             <ImageButton
                 android:id="@+id/btn_edit"
                 android:layout_width="40dp"
@@ -95,8 +104,6 @@
                 android:src="@drawable/ic_delete" />
         </LinearLayout>
 
-        <!-- Record the current position as this barrier's geo-point while
-             standing next to it. -->
         <com.google.android.material.switchmaterial.SwitchMaterial
             android:id="@+id/switch_auto_call"
             android:layout_width="match_parent"
@@ -104,6 +111,20 @@
             android:layout_marginTop="8dp"
             android:text="@string/label_card_auto"
             android:textColor="@color/text_primary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_share"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:text="@string/btn_share"
+            app:icon="@drawable/ic_share"
+            app:iconGravity="textStart"
+            app:iconTint="@color/primary"
+            app:cornerRadius="12dp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_record_coord"

@@ -375,9 +375,8 @@ class MainActivity : AppCompatActivity() {
         item.findViewById<ImageButton>(R.id.btn_edit).setOnClickListener {
             showBarrierDialog(existing = b)
         }
-        // Tapping the card also opens the editor.
-        item.findViewById<com.google.android.material.card.MaterialCardView>(R.id.card)
-            .setOnClickListener { showBarrierDialog(existing = b) }
+        item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_share)
+            .setOnClickListener { shareBarrier(b) }
         item.findViewById<ImageButton>(R.id.btn_delete).setOnClickListener {
             val list = BarrierStore.load(this).toMutableList()
             list.removeAll { it.id == b.id }
