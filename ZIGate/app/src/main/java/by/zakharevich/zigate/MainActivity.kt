@@ -35,6 +35,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import by.zakharevich.zigate.data.BarrierStore
 import by.zakharevich.zigate.data.Settings
@@ -47,7 +48,7 @@ import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.util.Base64
+import java.io.File
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -79,6 +80,11 @@ class MainActivity : AppCompatActivity() {
             requestBatteryExemptionIfNeeded()
             requestOverlayPermission()
             requestBackgroundLocationIfNeeded()
+        }
+
+    private val receiveFileLauncher =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri != null) importFromUri(uri)
         }
 
     // Result of the system "display over other apps" settings screen.
@@ -181,8 +187,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_add_barrier)
             .setOnClickListener { showAddBarrierDialog() }
 
-        findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_sync)
-            .setOnClickListener { showSyncDialog() }
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_send_file)
+            .setOnClickListener { sendBarriersFile() }
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_receive_file)
+            .setOnClickListener { pickBarriersFile() }
 
         Settings.setAutoEnabled(this, true)
         startService(BarrierService.ACTION_START)
@@ -375,8 +383,6 @@ class MainActivity : AppCompatActivity() {
         item.findViewById<ImageButton>(R.id.btn_edit).setOnClickListener {
             showBarrierDialog(existing = b)
         }
-        item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_share)
-            .setOnClickListener { shareBarrier(b) }
         item.findViewById<ImageButton>(R.id.btn_delete).setOnClickListener {
             val list = BarrierStore.load(this).toMutableList()
             list.removeAll { it.id == b.id }
@@ -1088,95 +1094,98 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---------------- share one barrier ----------------
-    private fun shareBarrier(b: Barrier) {
-        val payload = b.toShareJson().toString()
-        val encoded = Base64.encodeToString(
-            payload.toByteArray(Charsets.UTF_8),
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
-        )
-        val link = "zigate://barrier?d=$encoded"
-        val text = getString(R.string.share_text, b.name, b.phone, link)
-        val send = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "ZI Gate: ${b.name}")
-            putExtra(Intent.EXTRA_TEXT, text)
+    // ---------------- send / receive file ----------------
+    private fun sendBarriersFile() {
+        val list = BarrierStore.load(this)
+        if (list.isEmpty()) {
+            Toast.makeText(this, R.string.empty_list, Toast.LENGTH_SHORT).show()
+            return
         }
-        startActivity(Intent.createChooser(send, getString(R.string.share_chooser)))
+        val json = JSONArray().apply { list.forEach { put(it.toShareJson()) } }.toString()
+        val dir = File(cacheDir, "share").apply { mkdirs() }
+        val file = File(dir, "ZI-Gate-shlagbaumy.zigate")
+        file.writeText(json, Charsets.UTF_8)
+        val uri = FileProvider.getUriForFile(this, "by.zakharevich.zigate.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "application/x-zigate"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "ZI Gate")
+            clipData = ClipData.newRawUri("ZI Gate", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(send, getString(R.string.btn_send_file)))
+    }
+
+    private fun pickBarriersFile() {
+        runCatching { receiveFileLauncher.launch("*/*") }
+            .onFailure {
+                Toast.makeText(this, R.string.share_bad, Toast.LENGTH_SHORT).show()
+            }
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
-        val fromView = intent.data?.toString()
-        val fromSend = if (intent.action == Intent.ACTION_SEND)
-            intent.getStringExtra(Intent.EXTRA_TEXT) else null
-        val raw = fromView ?: fromSend ?: return
-        val b = parseSharedBarrier(raw) ?: run {
-            if (fromView != null || raw.contains("zigate://barrier")) {
-                Toast.makeText(this, R.string.share_bad, Toast.LENGTH_LONG).show()
-            }
+        val action = intent.action ?: return
+        if (action != Intent.ACTION_VIEW && action != Intent.ACTION_SEND) return
+        val uri = intent.data
+            ?: if (Build.VERSION.SDK_INT >= 33)
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            else
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        if (uri != null) {
+            importFromUri(uri)
+            setIntent(Intent(this, MainActivity::class.java))
             return
         }
-        confirmImportBarrier(b)
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        if (!text.isNullOrBlank() && (text.trim().startsWith("{") || text.trim().startsWith("["))) {
+            importJsonText(text)
+            setIntent(Intent(this, MainActivity::class.java))
+        }
     }
 
-    private fun parseSharedBarrier(raw: String): Barrier? {
-        val marker = "zigate://barrier"
-        val idx = raw.indexOf(marker)
-        if (idx >= 0) {
-            val rest = raw.substring(idx)
-            val q = rest.indexOf("d=")
-            if (q < 0) return null
-            var token = rest.substring(q + 2)
-            token = token.takeWhile { it != '\n' && it != ' ' && it != '&' }.trim()
-            return decodeShareToken(token)
+    private fun importFromUri(uri: Uri) {
+        val text = runCatching {
+            contentResolver.openInputStream(uri)?.use { it.bufferedReader(Charsets.UTF_8).readText() }
+        }.getOrNull()
+        if (text.isNullOrBlank()) {
+            Toast.makeText(this, R.string.share_bad, Toast.LENGTH_LONG).show()
+            return
         }
-        // Plain JSON object or array from clipboard-style share
-        return try {
-            val t = raw.trim()
-            when {
-                t.startsWith("{") -> Barrier.fromShareJson(JSONObject(t))
-                t.startsWith("[") -> {
-                    val arr = JSONArray(t)
-                    if (arr.length() == 0) null
-                    else Barrier.fromShareJson(arr.getJSONObject(0))
+        importJsonText(text)
+    }
+
+    private fun importJsonText(text: String) {
+        try {
+            val t = text.trim()
+            val arr = when {
+                t.startsWith("[") -> JSONArray(t)
+                t.startsWith("{") -> JSONArray().put(JSONObject(t))
+                else -> {
+                    Toast.makeText(this, R.string.share_bad, Toast.LENGTH_LONG).show()
+                    return
                 }
-                else -> null
             }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun decodeShareToken(token: String): Barrier? = try {
-        val padded = token + "=".repeat((4 - token.length % 4) % 4)
-        val json = String(Base64.decode(padded, Base64.URL_SAFE), Charsets.UTF_8)
-        Barrier.fromShareJson(JSONObject(json))
-    } catch (_: Exception) {
-        null
-    }
-
-    private fun confirmImportBarrier(b: Barrier) {
-        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
-            .setTitle(R.string.share_import_title)
-            .setMessage(
-                getString(
-                    R.string.share_import_msg,
-                    b.name,
-                    b.phone.ifBlank { "—" },
-                    b.radius.toInt()
-                )
-            )
-            .setNegativeButton(R.string.btn_cancel, null)
-            .setPositiveButton(R.string.btn_add) { _, _ ->
-                val list = BarrierStore.load(this).toMutableList()
+            val list = BarrierStore.load(this).toMutableList()
+            var added = 0
+            for (i in 0 until arr.length()) {
+                val b = Barrier.fromShareJson(arr.getJSONObject(i))
+                if (b.phone.isBlank() && b.lat == 0.0 && b.lng == 0.0) continue
                 list.add(b)
-                BarrierStore.save(this, list)
-                renderBarriers()
-                startServiceRefresh()
-                Toast.makeText(this, R.string.share_imported, Toast.LENGTH_SHORT).show()
+                added++
             }
-            .show()
+            if (added == 0) {
+                Toast.makeText(this, R.string.share_bad, Toast.LENGTH_LONG).show()
+                return
+            }
+            BarrierStore.save(this, list)
+            renderBarriers()
+            startServiceRefresh()
+            Toast.makeText(this, getString(R.string.share_imported) + " ($added)", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Ошибка импорта: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     // ---------------- sync (send / receive) ----------------
@@ -1290,6 +1299,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun httpGet(url: String): String? {
+        return try {
+            val u = URL(url)
+            val conn = u.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
+            val code = conn.responseCode
+            val text = if (code in 200..299) conn.inputStream.bufferedReader().readText() else null
+            conn.disconnect()
+            text
+        } catch (e: Exception) { null }
+    }
+}
+
         return try {
             val u = URL(url)
             val conn = u.openConnection() as java.net.HttpURLConnection

@@ -7,6 +7,8 @@
     <string name="section_barriers">Шлагбаумы</string>
     <string name="btn_add_barrier">Добавить шлагбаум</string>
     <string name="btn_sync">Загрузить / Отправить</string>
+    <string name="btn_send_file">Отправить</string>
+    <string name="btn_receive_file">Получить</string>
     <string name="dialog_add_barrier_title">Новый шлагбаум</string>
     <string name="hint_name">Название</string>
     <string name="hint_phone">Номер для звонка</string>

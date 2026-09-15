@@ -64,18 +64,33 @@
                     android:orientation="horizontal">
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_add_barrier"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/btn_add_barrier"
+                        app:cornerRadius="12dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_send_file"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/btn_add_barrier"
+                        android:text="@string/btn_send_file"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        app:icon="@drawable/ic_share"
+                        app:iconGravity="textStart"
                         app:cornerRadius="12dp" />
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_sync"
+                        android:id="@+id/btn_receive_file"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:layout_marginStart="8dp"
-                        android:text="@string/btn_sync"
+                        android:text="@string/btn_receive_file"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         app:cornerRadius="12dp" />
                 </LinearLayout>

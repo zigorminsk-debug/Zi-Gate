@@ -11,8 +11,8 @@ android {
         applicationId "by.zakharevich.zigate"
         minSdk 24
         targetSdk 34
-        versionCode 25
-        versionName "1.24"
+        versionCode 26
+        versionName "1.25"
         // Developer / signing identity.
         buildConfigField "String", "DEVELOPER", "\"Zakharevich Igor +375293371412\""
     }
