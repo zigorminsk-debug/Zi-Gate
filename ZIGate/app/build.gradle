@@ -1,0 +1,73 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'by.zakharevich.zigate'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "by.zakharevich.zigate"
+        minSdk 26
+        targetSdk 34
+        versionCode 20
+        versionName "1.19"
+        // Developer / signing identity.
+        buildConfigField "String", "DEVELOPER", "\"Zakharevich Igor +375293371412\""
+    }
+
+    signingConfigs {
+        release {
+            // Permanent release key. File lives at app/keystore/zigate-release.jks
+            storeFile file("keystore/zigate-release.jks")
+            storePassword "ZiGate_2026_Igor"
+            keyAlias "zigate"
+            keyPassword "ZiGate_2026_Igor"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.4'
+    implementation 'androidx.lifecycle:lifecycle-service:2.8.4'
+    debugImplementation 'androidx.test:rules:1.6.1'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.13'
+    testImplementation 'androidx.test:core:1.6.1'
+}

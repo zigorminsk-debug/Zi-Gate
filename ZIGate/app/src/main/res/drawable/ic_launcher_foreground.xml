@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Barrier gate: white vertical bars + lifting arm -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,34 L74,34 L74,42 L34,42 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,50 L74,50 L74,58 L34,58 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,66 L44,66 L44,76 L40,76 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,66 L56,66 L56,76 L52,76 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,66 L68,66 L68,76 L64,76 Z" />
+    <!-- Raising arm (accent) -->
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M34,28 L74,24 L74,30 L34,34 Z" />
+    <!-- Pulsing signal dot -->
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M86,50 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M86,50 m-2.6,0 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
+</vector>

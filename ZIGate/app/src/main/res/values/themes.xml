@@ -1,0 +1,31 @@
+<resources>
+    <style name="Theme.ZIGate" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Brand colors -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorOnSecondary">#1A2430</item>
+        <!-- Surfaces / background -->
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <!-- System bars -->
+        <item name="android:statusBarColor">@color/primary_dark</item>
+        <item name="android:navigationBarColor">@color/primary_dark</item>
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+
+    <!-- Always-light dialog theme. Used for AlertDialogs (Wi-Fi picker, add/
+         edit barrier, sync) so text is never dark-on-dark regardless of the
+         system dark/light mode. -->
+    <style name="Theme.ZIGate.Dialog" parent="Theme.Material3.Light.Dialog.Alert">
+        <item name="android:colorBackground">@color/card</item>
+        <item name="android:windowBackground">@color/card</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+    </style>
+</resources>

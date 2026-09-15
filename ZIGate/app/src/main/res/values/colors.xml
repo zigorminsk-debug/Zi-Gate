@@ -1,0 +1,17 @@
+<resources>
+    <color name="primary">#0B5FA5</color>
+    <color name="primary_dark">#07437A</color>
+    <color name="primary_light">#E3F0FB</color>
+    <color name="accent">#F5A623</color>
+    <color name="bg">#F4F6F9</color>
+    <color name="card">#FFFFFF</color>
+    <color name="text_primary">#1A2430</color>
+    <color name="text_secondary">#60707F</color>
+    <color name="primary_btn">#0B5FA5</color>
+    <color name="white_on_primary">#FFFFFF</color>
+    <color name="chip_bg">#EDF1F5</color>
+    <color name="chip_stroke">#D3DCE4</color>
+    <color name="ok">#2E9E5B</color>
+    <color name="warn">#E07A1F</color>
+    <color name="bad">#CF4436</color>
+</resources>

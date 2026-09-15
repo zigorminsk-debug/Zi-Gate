@@ -1,0 +1,67 @@
+<resources>
+    <string name="app_name">ZI Gate</string>
+    <string name="developer">Zakharevich Igor +375293371412</string>
+
+    <string name="permission_rationale">Для автоматического открытия шлагбаума приложению нужны разрешения: геолокация (GPS), звонки, Wi-Fi, работа в фоне и уведомления.</string>
+
+    <string name="section_barriers">Шлагбаумы</string>
+    <string name="btn_add_barrier">Добавить шлагбаум</string>
+    <string name="btn_sync">Загрузить / Отправить</string>
+    <string name="dialog_add_barrier_title">Новый шлагбаум</string>
+    <string name="hint_name">Название</string>
+    <string name="hint_phone">Номер для звонка</string>
+    <string name="hint_radius">Радиус зоны, м</string>
+    <string name="hint_repeat">повторный звонок в зоне, сек (5–180)</string>
+    <string name="repeat_label">Повтор: %1$d с</string>
+    <string name="label_name">Название</string>
+    <string name="label_phone">Номер для звонка</string>
+    <string name="label_radius">Радиус зоны, м</string>
+    <string name="label_repeat">Повторный звонок в зоне, сек</string>
+    <string name="label_icon">Иконка</string>
+    <string name="btn_cancel">Отмена</string>
+    <string name="btn_save">Сохранить</string>
+    <string name="btn_delete">Удалить</string>
+    <string name="btn_edit">Редактировать</string>
+    <string name="btn_record_coord">Записать координаты</string>
+    <string name="toast_coord_recorded">Координаты записаны</string>
+    <string name="toast_coord_recorded_acc">Координаты записаны (точность ±%1$d м)</string>
+    <string name="status_refining">уточнение GPS…</string>
+    <string name="btn_current_location">Текущая позиция</string>
+    <string name="btn_request_coord">Запросить координаты</string>
+    <string name="coord_requesting">Запрос координат…</string>
+    <string name="dialog_edit_barrier_title">Редактировать шлагбаум</string>
+    <string name="btn_save_changes">Сохранить изменения</string>
+    <string name="empty_list">Список шлагбаумов пуст. Добавьте первый.</string>
+
+    <string name="section_settings">Настройки</string>
+    <string name="label_enable_auto">Автоматическое открытие</string>
+    <string name="overlay_warning">⚠ Для автозвонка из фона включите «Поверх других приложений» для ZI Gate (Настройки → Приложения → ZI Gate → Поверх других приложений).</string>
+    <string name="overlay_warning_short">Включите «Поверх других приложений», иначе автозвонок из фона не сработает.</string>
+    <string name="label_wifi_gate">Пауза опроса при подключении к этой Wi-Fi сети</string>
+    <string name="btn_select_wifi">Выбрать Wi-Fi сети</string>
+    <string name="wifi_dialog_title">Wi-Fi сети (пауза опроса)</string>
+    <string name="wifi_empty">Список пуст. Введите название сети вручную ниже или включите геолокацию, чтобы приложение могло сканировать видимые сети.</string>
+    <string name="hint_wifi_manual">Название сети (SSID)</string>
+    <string name="btn_add_wifi">Добавить</string>
+    <string name="btn_wifi_done">Готово</string>
+    <string name="label_pause_code">Код паузы (разрешить подключаться к автосети)</string>
+    <string name="hint_pause_code">Код/капча для доступа к шлагбауму</string>
+
+    <string name="section_status">Статус</string>
+    <string name="status_service">Служба</string>
+    <string name="status_gps">GPS</string>
+    <string name="status_wifi">Wi-Fi</string>
+    <string name="status_last_fix">Последняя точка</string>
+    <string name="status_poll">Период опроса</string>
+    <string name="status_none">—</string>
+    <string name="status_off">выкл</string>
+    <string name="status_on">вкл</string>
+    <string name="status_paused">пауза</string>
+    <string name="status_waiting">ожидание</string>
+    <string name="status_in_zone">в зоне</string>
+    <string name="fmt_last_fix">%1$s · %2$d м</string>
+
+    <string name="notification_channel_service">Отслеживание шлагбаума</string>
+    <string name="notification_title">ZI Gate активен</string>
+    <string name="notification_text">Слежение за зонами шлагбаумов включено</string>
+</resources>
