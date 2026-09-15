@@ -38,6 +38,15 @@ class App : Application() {
             ).apply {
                 description = getString(R.string.notif_call_body, "")
                 enableVibration(true)
+                enableLights(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                setBypassDnd(true)
+                setSound(
+                    android.provider.Settings.System.DEFAULT_NOTIFICATION_URI,
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                        .build()
+                )
             }
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(channel)

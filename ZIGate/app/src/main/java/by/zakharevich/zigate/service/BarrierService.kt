@@ -33,6 +33,7 @@ import by.zakharevich.zigate.data.RouteMemory
 import by.zakharevich.zigate.data.Settings
 import by.zakharevich.zigate.model.Barrier
 import by.zakharevich.zigate.util.AdaptivePolling
+import by.zakharevich.zigate.util.DialHelper
 import by.zakharevich.zigate.util.KeepAlive
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
@@ -736,23 +737,23 @@ class BarrierService : Service() {
             // re-entering fires immediately.
             val intervalMs = (b.repeatIntervalSec.coerceIn(5, 180)) * 1000L
             if (d <= b.radius) {
-                // Confidence gate: a single coarse fix must never fire a call
-                // (this was the false "7 m" right after a Wi-Fi disconnect).
-                val needAcc = max(25f, min(b.radius, 60f))
-                if (acc > needAcc) {
-                    consecutiveInside[b.id] = 0
-                    Log.d(TAG, "in zone '${b.name}' but accuracy too poor " +
-                            "(±${acc.toInt()}m, need ±${needAcc.toInt()}m) - wait for better fix")
-                    continue
-                }
-                val n = (consecutiveInside[b.id] ?: 0) + 1
-                consecutiveInside[b.id] = n
-                // Need 2 consecutive inside-fixes, unless we are deep inside
-                // (distance + accuracy still inside the zone -> confident at once).
-                val confident = d + acc <= b.radius + 5f
-                if (n < 2 && !confident) {
-                    Log.d(TAG, "in zone '${b.name}' first fix d=${d.toInt()}m - wait for confirmation fix")
-                    continue
+                if (b.autoCall) {
+                    val needAcc = max(25f, min(b.radius, 60f))
+                    if (acc > needAcc) {
+                        consecutiveInside[b.id] = 0
+                        Log.d(TAG, "in zone '${b.name}' but accuracy too poor " +
+                                "(±${acc.toInt()}m, need ±${needAcc.toInt()}m) - wait for better fix")
+                        continue
+                    }
+                    val n = (consecutiveInside[b.id] ?: 0) + 1
+                    consecutiveInside[b.id] = n
+                    val confident = d + acc <= b.radius + 5f
+                    if (n < 2 && !confident) {
+                        Log.d(TAG, "in zone '${b.name}' first fix d=${d.toInt()}m - wait for confirmation fix")
+                        continue
+                    }
+                } else {
+                    consecutiveInside[b.id] = 2
                 }
                 if (now - b.lastTriggeredAt > intervalMs) {
                     if (b.autoCall) {
@@ -786,20 +787,33 @@ class BarrierService : Service() {
     }
 
     private fun showCallPrompt(b: Barrier) {
-        val phone = b.phone.trim()
+        val phone = DialHelper.normalize(b.phone)
         if (phone.isEmpty()) return
-        val callIntent = Intent(this, by.zakharevich.zigate.receiver.CallPromptReceiver::class.java)
-            .setAction(by.zakharevich.zigate.receiver.CallPromptReceiver.ACTION_CALL_NOW)
-            .putExtra(by.zakharevich.zigate.receiver.CallPromptReceiver.EXTRA_PHONE, phone)
+        runCatching {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                "zigate:callprompt"
+            ).acquire(3000L)
+        }
+        val act = Intent(this, by.zakharevich.zigate.CallNowActivity::class.java)
+            .putExtra(by.zakharevich.zigate.CallNowActivity.EXTRA_PHONE, phone)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val callPi = PendingIntent.getBroadcast(this, b.id.hashCode(), callIntent, flags)
+        val callPi = PendingIntent.getActivity(this, b.id.hashCode(), act, flags)
         val notif = NotificationCompat.Builder(this, App.CHANNEL_PROMPT)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(getString(R.string.notif_call_title, b.name))
             .setContentText(getString(R.string.notif_call_body, phone))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(Notification.DEFAULT_ALL)
             .setAutoCancel(true)
             .setContentIntent(callPi)
+            .setFullScreenIntent(callPi, true)
             .addAction(0, getString(R.string.notif_call_action), callPi)
             .build()
         runCatching {

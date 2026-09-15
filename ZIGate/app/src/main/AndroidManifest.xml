@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- WiFi network detection -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -140,6 +141,16 @@
         </receiver>
 
         <!-- Shows an uncaught exception full-screen so it can be read/copied. -->
+        <activity
+            android:name=".CallNowActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.ZIGate.Transparent" />
+
         <activity
             android:name=".CrashActivity"
             android:exported="false"
