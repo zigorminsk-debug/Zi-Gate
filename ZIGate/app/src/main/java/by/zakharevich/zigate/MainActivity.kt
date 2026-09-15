@@ -1119,18 +1119,22 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.empty_list, Toast.LENGTH_SHORT).show()
             return
         }
-        val density = resources.displayMetrics.density
-        val m = (16 * density).toInt()
+        val d = resources.displayMetrics.density
+        val m = (16 * d).toInt()
         val checked = MutableList(list.size) { true }
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(m, m, m, 0)
-        }
         val boxes = mutableListOf<CheckBox>()
-        fun applyAll(on: Boolean) {
-            boxes.forEach { it.isChecked = on }
+        fun applyAll(on: Boolean) { boxes.forEach { it.isChecked = on } }
+
+        val title = TextView(this).apply {
+            text = getString(R.string.send_pick_title)
+            textSize = 20f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+            setPadding(m, (18 * d).toInt(), m, (8 * d).toInt())
         }
-        val toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(m, 0, m, 0)
+        }
         val allBtn = com.google.android.material.button.MaterialButton(this).apply {
             text = getString(R.string.btn_select_all)
             isAllCaps = false
@@ -1142,9 +1146,16 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { applyAll(false) }
         }
         toolbar.addView(allBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        toolbar.addView(noneBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            .apply { setMargins((8 * density).toInt(), 0, 0, 0) })
-        column.addView(toolbar)
+        toolbar.addView(
+            noneBtn,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { setMargins((8 * d).toInt(), 0, 0, 0) }
+        )
+
+        val listCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(m, 0, m, 0)
+        }
         for (i in list.indices) {
             val b = list[i]
             val cb = CheckBox(this).apply {
@@ -1154,22 +1165,67 @@ class MainActivity : AppCompatActivity() {
                 setOnCheckedChangeListener { _, on -> checked[i] = on }
             }
             boxes.add(cb)
-            column.addView(cb)
+            listCol.addView(cb)
         }
-        val scroll = ScrollView(this).apply { addView(column) }
-        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
-            .setTitle(R.string.send_pick_title)
-            .setView(scroll)
-            .setNegativeButton(R.string.btn_cancel, null)
-            .setPositiveButton(R.string.btn_send_file) { _, _ ->
-                val picked = list.filterIndexed { i, _ -> checked[i] }
-                if (picked.isEmpty()) {
-                    Toast.makeText(this, R.string.send_none, Toast.LENGTH_SHORT).show()
-                } else {
-                    sendBarriersFile(picked)
-                }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(listCol)
+        }
+
+        val cancelBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.btn_cancel)
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            setBackgroundColor(0)
+        }
+        val sendBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.btn_send_file)
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white_on_primary))
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.primary))
+        }
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(m, (6 * d).toInt(), m, (14 * d).toInt())
+            addView(cancelBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(
+                sendBtn,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f)
+                    .apply { setMargins((10 * d).toInt(), 0, 0, 0) }
+            )
+        }
+
+        val dialog = android.app.Dialog(this, R.style.Theme_ZIGate_Dialog)
+        sendBtn.setOnClickListener {
+            val picked = list.filterIndexed { i, _ -> checked[i] }
+            if (picked.isEmpty()) {
+                Toast.makeText(this, R.string.send_none, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
-            .show()
+            dialog.dismiss()
+            sendBarriersFile(picked)
+        }
+        cancelBtn.setOnClickListener { dialog.dismiss() }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.dialog_bg)
+            addView(title, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(toolbar, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(scroll, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(btnRow, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        }
+        dialog.setContentView(root)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        val lp = dialog.window?.attributes
+        lp?.width = resources.displayMetrics.widthPixels
+        lp?.height = (resources.displayMetrics.heightPixels * 0.75f).toInt()
+        dialog.window?.attributes = lp
+        dialog.show()
     }
 
     private fun sendBarriersFile(list: List<Barrier>) {
