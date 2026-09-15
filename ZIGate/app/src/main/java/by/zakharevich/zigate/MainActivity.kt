@@ -1312,17 +1312,3 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) { null }
     }
 }
-
-        return try {
-            val u = URL(url)
-            val conn = u.openConnection() as java.net.HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 15000
-            conn.readTimeout = 15000
-            val code = conn.responseCode
-            val text = if (code in 200..299) conn.inputStream.bufferedReader().readText() else null
-            conn.disconnect()
-            text
-        } catch (e: Exception) { null }
-    }
-}

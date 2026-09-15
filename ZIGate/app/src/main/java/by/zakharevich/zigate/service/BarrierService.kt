@@ -154,6 +154,8 @@ class BarrierService : Service() {
         private const val NET_MAX_PERIOD_NEAR_MS = 30_000L
         private const val NET_MAX_PERIOD_FAR_MS = 60_000L
         private const val NET_FAR_BOUNDARY_M = 1000f
+        /** GPS earlier when on a learned commute cell. */
+        private const val GPS_REGIME_ROUTE_M = 700f
 
         private val statusListeners = CopyOnWriteArrayList<(ServiceStatus) -> Unit>()
 
