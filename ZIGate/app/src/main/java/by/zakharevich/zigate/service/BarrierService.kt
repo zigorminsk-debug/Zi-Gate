@@ -16,6 +16,7 @@ import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
@@ -28,6 +29,7 @@ import androidx.core.content.ContextCompat
 import by.zakharevich.zigate.App
 import by.zakharevich.zigate.R
 import by.zakharevich.zigate.data.BarrierStore
+import by.zakharevich.zigate.data.RouteMemory
 import by.zakharevich.zigate.data.Settings
 import by.zakharevich.zigate.model.Barrier
 import by.zakharevich.zigate.util.AdaptivePolling
@@ -95,6 +97,8 @@ class BarrierService : Service() {
 
     private var pausedByWifi = false
     private var currentSsid: String? = null
+    private var charging = false
+    private var onLearnedRoute = false
 
     private var barriers: MutableList<Barrier> = mutableListOf()
     private var wifiPause: Set<String> = emptySet()
@@ -174,6 +178,18 @@ class BarrierService : Service() {
         }
     }
 
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val was = charging
+            charging = isChargingNow()
+            if (was != charging) {
+                recomputeWifiState()
+                updateLocationRegistration()
+                publishStatus()
+            }
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(loc: Location) { onLocation(loc) }
@@ -197,6 +213,15 @@ class BarrierService : Service() {
         ContextCompat.registerReceiver(
             this, wifiReceiver, filter, ContextCompat.RECEIVER_EXPORTED
         )
+        val powerFilter = IntentFilter().apply {
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+        }
+        ContextCompat.registerReceiver(
+            this, powerReceiver, powerFilter, ContextCompat.RECEIVER_EXPORTED
+        )
+        charging = isChargingNow()
 
         startAsForeground()
         acquireWakeLock()
@@ -221,6 +246,7 @@ class BarrierService : Service() {
                     consecutiveInside.keys.retainAll(ids)
                     lastBarrierIds = ids
                 }
+                charging = isChargingNow()
                 recomputeWifiState()
                 if (!hasFix) seedLastKnown()
                 updateLocationRegistration()
@@ -394,10 +420,13 @@ class BarrierService : Service() {
             releaseWakeLock()
             return
         }
-        acquireWakeLock()
 
         val dist = distanceToNearest()
         val provider = chooseProvider(dist)
+        val periodHint = if (warmupRemaining > 0) WARMUP_PERIOD_MS else periodFor(provider)
+        val needWake = charging || warmupRemaining > 0 ||
+                (dist != null && dist < GPS_REGIME_M) || periodHint <= 3_000L
+        if (needWake) acquireWakeLock() else releaseWakeLock()
 
         if (!hasFix && warmupRemaining == 0) {
             warmupRemaining = WARMUP_FIXES
@@ -410,8 +439,14 @@ class BarrierService : Service() {
         }
 
         val period = if (warmupRemaining > 0) WARMUP_PERIOD_MS else periodFor(provider)
-        val wantDual = warmupRemaining > 0 || gpsStarving() ||
-                dist == null || dist < GPS_REGIME_M
+        val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
+        val wantDual = charging || warmupRemaining > 0 || gpsStarving() ||
+                dist == null || gpsNear
+        val minDist = when {
+            charging || warmupRemaining > 0 || gpsNear -> 0f
+            dist != null && dist < 800f -> 8f
+            else -> 40f
+        }
         val dualKey = if (wantDual) "dual" else provider
         if (registered && dualKey == currentProvider &&
             abs(period - currentIntervalMs) < 2_000
@@ -426,7 +461,7 @@ class BarrierService : Service() {
                 runCatching {
                     if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                         lm.requestLocationUpdates(
-                            LocationManager.GPS_PROVIDER, period, 0f,
+                            LocationManager.GPS_PROVIDER, period, minDist,
                             locationListener, Looper.getMainLooper()
                         )
                     }
@@ -436,14 +471,14 @@ class BarrierService : Service() {
             runCatching {
                 if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                     lm.requestLocationUpdates(
-                        LocationManager.NETWORK_PROVIDER, netPeriod, 0f,
+                        LocationManager.NETWORK_PROVIDER, netPeriod, minDist,
                         locationListener, Looper.getMainLooper()
                     )
                 }
             }
             runCatching {
                 lm.requestLocationUpdates(
-                    LocationManager.PASSIVE_PROVIDER, period, 0f,
+                    LocationManager.PASSIVE_PROVIDER, period, minDist,
                     locationListener, Looper.getMainLooper()
                 )
             }
@@ -615,6 +650,17 @@ class BarrierService : Service() {
         prevDistToNearest = distance
         prevFixNanos = nowNanos
         prevNearestId = nearest?.id
+
+        RouteMemory.onFix(loc.latitude, loc.longitude)
+        onLearnedRoute = RouteMemory.isOnRoute(this, loc.latitude, loc.longitude)
+
+        if (nearest != null && loc.hasSpeed() && loc.speed >= 1.0f && loc.hasBearing()) {
+            val brng = AdaptivePolling.bearingDegrees(
+                loc.latitude, loc.longitude, nearest.lat, nearest.lng
+            )
+            val vGps = AdaptivePolling.radialSpeedFromGps(loc.speed, loc.bearing, brng)
+            lastRadialVelocity = lastRadialVelocity * 0.35f + vGps * 0.65f
+        }
     }
 
     /** Sanity gate for raw fixes: rejects stale / coarse / mock / zero ones. */
@@ -661,12 +707,19 @@ class BarrierService : Service() {
             }
 
     private fun currentPeriod(): Long {
+        if (charging) return AdaptivePolling.CHARGE_PERIOD_MS
         val nearest = nearestBarrier()
         if (nearest == null) return AdaptivePolling.MAX_PERIOD_MS
         val d = if (lastLat != null && lastLng != null)
             AdaptivePolling.distanceMeters(lastLat!!, lastLng!!, nearest.lat, nearest.lng)
         else AdaptivePolling.MAX_PERIOD_MS.toFloat()
-        return AdaptivePolling.intervalMs(d, nearest.radius, lastRadialVelocity)
+        val stationary = kotlin.math.abs(lastRadialVelocity) < 0.4f
+        return AdaptivePolling.intervalMs(
+            d, nearest.radius, lastRadialVelocity,
+            charging = false,
+            onRoute = onLearnedRoute,
+            stationary = stationary
+        )
     }
 
     private fun checkTriggers(loc: Location) {
@@ -705,6 +758,7 @@ class BarrierService : Service() {
                         if (placeCall(b.phone)) {
                             b.lastTriggeredAt = now
                             changed = true
+                            RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
                         } else {
                             Log.w(TAG, "Call to '${b.phone}' was NOT placed.")
                         }
@@ -713,6 +767,7 @@ class BarrierService : Service() {
                         showCallPrompt(b)
                         b.lastTriggeredAt = now
                         changed = true
+                        RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
                     }
                 }
             } else {
@@ -792,7 +847,8 @@ class BarrierService : Service() {
     private fun recomputeWifiState() {
         val wasPaused = pausedByWifi
         currentSsid = currentWifiSsid()
-        pausedByWifi = Settings.isWifiGateEnabled(this) &&
+        pausedByWifi = !charging &&
+                Settings.isWifiGateEnabled(this) &&
                 currentSsid != null &&
                 wifiPause.contains(currentSsid)
 
@@ -802,6 +858,18 @@ class BarrierService : Service() {
         if (wasPaused && !pausedByWifi) {
             startWarmup()
         }
+    }
+
+    private fun isChargingNow(): Boolean {
+        return runCatching {
+            val bm = getSystemService(BATTERY_SERVICE) as? BatteryManager
+            if (bm != null && Build.VERSION.SDK_INT >= 23) {
+                if (bm.isCharging) return true
+            }
+            val st = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val plugged = st?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+            plugged != 0
+        }.getOrDefault(false)
     }
 
     private fun currentWifiSsid(): String? {
@@ -873,6 +941,7 @@ class BarrierService : Service() {
         stopLocation()
         releaseWakeLock()
         runCatching { unregisterReceiver(wifiReceiver) }
+        runCatching { unregisterReceiver(powerReceiver) }
         KeepAlive.schedule(this)
         super.onDestroy()
     }
