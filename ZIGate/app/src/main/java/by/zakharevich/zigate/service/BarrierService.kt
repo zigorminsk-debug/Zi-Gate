@@ -86,6 +86,8 @@ class BarrierService : Service() {
     private var prevFixNanos: Long = 0L
     private var prevNearestId: String? = null
     private var lastRadialVelocity = 0f
+    /** ElapsedRealtime of last real movement. Sitting still must not keep GPS on. */
+    private var lastMotionElapsed: Long = 0L
 
     /** Number of fast fixes still to collect during the short warm-up burst
      *  after resuming from a WiFi pause (or on a cold start with no fix yet).
@@ -140,6 +142,9 @@ class BarrierService : Service() {
         private const val VELOCITY_ACC_MAX_M = 35f
         /** Ignore a teleport: metres of jump faster than a car. */
         private const val MAX_JUMP_MPS = 50f
+        /** After this long without movement, drop GPS and poll network slowly. */
+        private const val IDLE_AFTER_MS = 45_000L
+        private const val IDLE_PERIOD_MS = 60_000L
 
         // ---- provider regime (battery optimisation, v1.16) ----
         /** Within this distance to the nearest barrier we run full GPS:
@@ -403,6 +408,13 @@ class BarrierService : Service() {
         }
     }
 
+    private fun isIdleStationary(): Boolean {
+        if (charging || warmupRemaining > 0) return false
+        if (lastMotionElapsed == 0L) return false
+        if (kotlin.math.abs(lastRadialVelocity) > 0.8f) return false
+        return SystemClock.elapsedRealtime() - lastMotionElapsed > IDLE_AFTER_MS
+    }
+
     private fun gpsStarving(): Boolean {
         if (lastGoodGpsElapsed == 0L) return !hasFix
         return SystemClock.elapsedRealtime() - lastGoodGpsElapsed > GPS_STARVE_MS
@@ -440,10 +452,14 @@ class BarrierService : Service() {
         }
 
         val dist = distanceToNearest()
+        val idle = isIdleStationary()
         val provider = chooseProvider(dist)
-        val periodHint = if (warmupRemaining > 0) WARMUP_PERIOD_MS else periodFor(provider)
-        val needWake = charging || warmupRemaining > 0 ||
-                (dist != null && dist < GPS_REGIME_M) || periodHint <= 3_000L
+        val periodHint = when {
+            warmupRemaining > 0 -> WARMUP_PERIOD_MS
+            idle && !charging -> IDLE_PERIOD_MS
+            else -> periodFor(provider)
+        }
+        val needWake = charging || warmupRemaining > 0 || (!idle && periodHint <= 2_000L)
         if (needWake) acquireWakeLock() else releaseWakeLock()
 
         if (!hasFix && warmupRemaining == 0) {
@@ -456,16 +472,27 @@ class BarrierService : Service() {
             lastRadialVelocity = 0f
         }
 
-        val period = if (warmupRemaining > 0) WARMUP_PERIOD_MS else periodFor(provider)
+        val period = when {
+            warmupRemaining > 0 -> WARMUP_PERIOD_MS
+            idle && !charging -> IDLE_PERIOD_MS
+            else -> periodFor(provider)
+        }
         val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
-        val wantDual = charging || warmupRemaining > 0 || gpsStarving() ||
-                dist == null || gpsNear
+        val approaching = lastRadialVelocity < -0.8f
+        val wantGps = charging || warmupRemaining > 0 ||
+                (!idle && (gpsNear || approaching || dist == null))
         val minDist = when {
-            charging || warmupRemaining > 0 || gpsNear -> 0f
-            dist != null && dist < 800f -> 8f
+            charging || warmupRemaining > 0 -> 0f
+            idle -> 30f
+            gpsNear && !idle -> 0f
+            dist != null && dist < 800f -> 15f
             else -> 40f
         }
-        val dualKey = if (wantDual) "dual" else provider
+        val dualKey = when {
+            wantGps -> "dual"
+            idle -> "idle-net"
+            else -> provider
+        }
         if (registered && dualKey == currentProvider &&
             abs(period - currentIntervalMs) < 2_000
         ) return
@@ -475,7 +502,7 @@ class BarrierService : Service() {
             // Dual registration: many phones never deliver GPS if only NETWORK
             // is subscribed (and vice versa). GPS near the gate / when starving;
             // always keep NETWORK as a fallback.
-            if (wantDual || provider == LocationManager.GPS_PROVIDER) {
+            if (wantGps) {
                 runCatching {
                     if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                         lm.requestLocationUpdates(
@@ -485,7 +512,7 @@ class BarrierService : Service() {
                     }
                 }
             }
-            val netPeriod = if (wantDual) max(period, 5_000L) else period.coerceAtLeast(5_000L)
+            val netPeriod = if (wantGps) max(period, 5_000L) else period.coerceAtLeast(8_000L)
             runCatching {
                 if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                     lm.requestLocationUpdates(
@@ -712,6 +739,11 @@ class BarrierService : Service() {
             val vGps = AdaptivePolling.radialSpeedFromGps(loc.speed, loc.bearing, brng)
             lastRadialVelocity = lastRadialVelocity * 0.35f + vGps * 0.65f
         }
+        val moving = (loc.hasSpeed() && loc.speed >= MOVING_SPEED_MS) ||
+                kotlin.math.abs(lastRadialVelocity) > 0.8f
+        val nowEl = SystemClock.elapsedRealtime()
+        if (moving) lastMotionElapsed = nowEl
+        else if (lastMotionElapsed == 0L) lastMotionElapsed = nowEl
     }
 
     /** Sanity gate for raw fixes: rejects stale / coarse / mock / zero ones. */
@@ -759,6 +791,7 @@ class BarrierService : Service() {
 
     private fun currentPeriod(): Long {
         if (charging) return AdaptivePolling.CHARGE_PERIOD_MS
+        if (isIdleStationary()) return IDLE_PERIOD_MS
         val nearest = nearestBarrier()
         if (nearest == null) return AdaptivePolling.MAX_PERIOD_MS
         val d = if (lastLat != null && lastLng != null)
