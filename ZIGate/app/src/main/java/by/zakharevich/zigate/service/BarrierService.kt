@@ -74,6 +74,11 @@ class BarrierService : Service() {
     private var lastAccuracy: Float? = null
     private var lastFixTimeMs: Long = 0L
     private var hasFix = false
+    private var lastFixGps = false
+    private var lastGpsElapsed: Long = 0L
+
+    /** Confirmed inside (hysteresis) so GPS jitter does not re-arm the call. */
+    private val wasInside = mutableMapOf<String, Boolean>()
 
     // Velocity-aware polling: previous distance to the nearest barrier, used
     // to estimate the radial approach/recede speed (m/s).
@@ -122,22 +127,19 @@ class BarrierService : Service() {
         private const val WARMUP_PERIOD_MS = 1_000L
         /** Warm-up never lasts longer than this (safety net for bad GPS). */
         private const val WARMUP_TIMEOUT_MS = 25_000L
-        /** GPS fixes coarser than this are dropped (cold-start junk).
-         *  150 m: some OEM GNSS reports 90–120 m indoors and never beats 80. */
-        private const val GPS_FIX_ACCURACY_MAX_M = 150f
-        /** Network fixes are allowed to be coarser: far away we only need to
-         *  know the approximate distance, not the exact metre. */
-        private const val NET_FIX_ACCURACY_MAX_M = 500f
-        /** If GPS is silent this long, take even coarser network so we are not blind. */
-        private const val GPS_STARVE_MS = 45_000L
-        private const val STARVE_NET_ACCURACY_MAX_M = 1500f
-        /** Fixes older than this are dropped as stale. */
-        private const val MAX_FIX_AGE_MS = 120_000L
-        /** Speed (m/s) at/above which we treat the phone as really moving. */
-        private const val MOVING_SPEED_MS = 1.2f
-        /** Radial speed is only estimated from fixes at least this accurate,
-         *  so noisy coarse fixes cannot whip the polling model around. */
-        private const val VELOCITY_ACC_MAX_M = 50f
+        /** GPS worse than this is junk even far away. Near the gate we tighten further. */
+        private const val GPS_FIX_ACCURACY_MAX_M = 80f
+        /** Network is only a far-away hint, never a trigger. */
+        private const val NET_FIX_ACCURACY_MAX_M = 400f
+        private const val GPS_STARVE_MS = 20_000L
+        private const val STARVE_NET_ACCURACY_MAX_M = 800f
+        /** Last-known older than this is not used as a position. */
+        private const val MAX_FIX_AGE_MS = 20_000L
+        private const val SEED_MAX_AGE_MS = 90_000L
+        private const val MOVING_SPEED_MS = 1.0f
+        private const val VELOCITY_ACC_MAX_M = 35f
+        /** Ignore a teleport: metres of jump faster than a car. */
+        private const val MAX_JUMP_MPS = 50f
 
         // ---- provider regime (battery optimisation, v1.16) ----
         /** Within this distance to the nearest barrier we run full GPS:
@@ -298,10 +300,16 @@ class BarrierService : Service() {
             runCatching { lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) }.getOrNull(),
             runCatching { lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) }.getOrNull()
         )
-        val best = candidates.filter { isUsableLocation(it, starving = true, ignoreAge = true) }
-            .minByOrNull { if (it.hasAccuracy()) it.accuracy else 9999f }
+        val best = candidates.filter { loc ->
+            val age = if (Build.VERSION.SDK_INT >= 17)
+                (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L
+            else abs(System.currentTimeMillis() - loc.time)
+            age in 0..SEED_MAX_AGE_MS &&
+                isUsableLocation(loc, starving = true, ignoreAge = true)
+        }.minByOrNull { if (it.hasAccuracy()) it.accuracy else 9999f }
         if (best != null && !hasFix) {
             acceptFix(best, fromWarmup = true)
+            // Display only — never call from a cached last-known point.
         }
     }
 
@@ -384,11 +392,13 @@ class BarrierService : Service() {
         else LocationManager.PASSIVE_PROVIDER
         if (!gpsOk) return LocationManager.NETWORK_PROVIDER
 
+        if (charging || lastRadialVelocity < -1f) return LocationManager.GPS_PROVIDER
+        val gpsM = if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M
+        val netM = gpsM + 120f
         return when {
-            // Cold start / no fix: GPS first — NETWORK-only left some OEM phones blind.
             distToNearest == null -> LocationManager.GPS_PROVIDER
-            distToNearest < GPS_REGIME_M -> LocationManager.GPS_PROVIDER
-            distToNearest > NET_REGIME_M -> LocationManager.NETWORK_PROVIDER
+            distToNearest < gpsM -> LocationManager.GPS_PROVIDER
+            distToNearest > netM -> LocationManager.NETWORK_PROVIDER
             else -> currentProvider ?: LocationManager.GPS_PROVIDER
         }
     }
@@ -399,9 +409,14 @@ class BarrierService : Service() {
     }
 
     /** Accuracy gate for a fix, depending on the active regime. */
+    private fun isGpsFix(loc: Location): Boolean =
+        loc.provider == LocationManager.GPS_PROVIDER
+
     private fun maxAcceptableAccuracy(loc: Location): Float {
-        val gps = loc.provider == LocationManager.GPS_PROVIDER
-        if (gps) return GPS_FIX_ACCURACY_MAX_M
+        val near = distanceToNearest()
+        val close = near != null && near < 250f
+        if (isGpsFix(loc)) return if (close) 40f else GPS_FIX_ACCURACY_MAX_M
+        if (close) return 0f // reject network next to the gate
         return if (gpsStarving()) STARVE_NET_ACCURACY_MAX_M else NET_FIX_ACCURACY_MAX_M
     }
 
@@ -527,6 +542,7 @@ class BarrierService : Service() {
         prevNearestId = null
         lastRadialVelocity = 0f
         consecutiveInside.clear()
+        wasInside.clear()
         updateLocationRegistration()
     }
 
@@ -538,6 +554,23 @@ class BarrierService : Service() {
             updateLocationRegistration()
             publishStatus()
             return
+        }
+        val near = distanceToNearest()
+        val gpsFresh = lastGpsElapsed != 0L &&
+                SystemClock.elapsedRealtime() - lastGpsElapsed < 12_000L
+        if (!isGpsFix(loc) && (gpsFresh || (near != null && near < 350f))) {
+            Log.d(TAG, "drop network near gate / while GPS is fresh")
+            return
+        }
+        if (hasFix && lastLat != null && lastLng != null) {
+            val jump = AdaptivePolling.distanceMeters(
+                lastLat!!, lastLng!!, loc.latitude, loc.longitude
+            )
+            val dt = (System.currentTimeMillis() - lastFixTimeMs).coerceAtLeast(1L) / 1000f
+            if (jump / dt > MAX_JUMP_MPS && jump > 80f) {
+                Log.d(TAG, "drop teleport ${jump.toInt()}m in ${dt}s")
+                return
+            }
         }
 
         // ---- 2. Warm-up burst: collect, never flash intermediate jumps. ----
@@ -603,7 +636,11 @@ class BarrierService : Service() {
         }
 
         acceptFix(loc, fromWarmup = false)
-        checkTriggers(loc)
+        val smoothed = Location(loc).apply {
+            lastLat?.let { latitude = it }
+            lastLng?.let { longitude = it }
+        }
+        checkTriggers(smoothed)
 
         // Adapt the sampling rate to the current distance AND radial speed.
         updateLocationRegistration()
@@ -614,13 +651,24 @@ class BarrierService : Service() {
     private fun acceptFix(loc: Location, fromWarmup: Boolean) {
         val nowNanos = System.nanoTime()
         val firstFix = !hasFix
-        lastLat = loc.latitude
-        lastLng = loc.longitude
-        lastAccuracy = if (loc.hasAccuracy()) loc.accuracy else null
+        if (hasFix && lastLat != null && lastLng != null && loc.hasAccuracy() &&
+            loc.accuracy <= 40f && (lastAccuracy ?: 99f) <= 40f && isGpsFix(loc)
+        ) {
+            val wNew = (lastAccuracy ?: loc.accuracy) /
+                    ((lastAccuracy ?: loc.accuracy) + loc.accuracy)
+            lastLat = lastLat!! * (1.0 - wNew) + loc.latitude * wNew
+            lastLng = lastLng!! * (1.0 - wNew) + loc.longitude * wNew
+        } else {
+            lastLat = loc.latitude
+            lastLng = loc.longitude
+        }
+        lastAccuracy = if (loc.hasAccuracy()) loc.accuracy else lastAccuracy
         lastFixTimeMs = System.currentTimeMillis()
         hasFix = true
-        if (loc.provider == LocationManager.GPS_PROVIDER) {
+        lastFixGps = isGpsFix(loc) || loc.provider == "zigate-stable" && lastFixGps
+        if (isGpsFix(loc)) {
             lastGoodGpsElapsed = SystemClock.elapsedRealtime()
+            lastGpsElapsed = lastGoodGpsElapsed
         }
 
         val nearest = nearestBarrier()
@@ -728,58 +776,60 @@ class BarrierService : Service() {
     private fun checkTriggers(loc: Location) {
         val now = System.currentTimeMillis()
         val acc = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
+        val gpsOk = isGpsFix(loc) || (loc.provider == "zigate-stable" && lastFixGps)
         var changed = false
         for (b in barriers) {
             if (!b.enabled || !hasCoords(b)) continue
             val d = AdaptivePolling.distanceMeters(loc.latitude, loc.longitude, b.lat, b.lng)
-            // Per-barrier repeat interval: while we stay inside the zone, re-dial
-            // after b.repeatIntervalSec (5s..3min). Leave the zone -> reset, so
-            // re-entering fires immediately.
             val intervalMs = (b.repeatIntervalSec.coerceIn(5, 180)) * 1000L
-            if (d <= b.radius) {
-                if (b.autoCall) {
-                    val needAcc = max(25f, min(b.radius, 60f))
-                    if (acc > needAcc) {
-                        consecutiveInside[b.id] = 0
-                        Log.d(TAG, "in zone '${b.name}' but accuracy too poor " +
-                                "(±${acc.toInt()}m, need ±${needAcc.toInt()}m) - wait for better fix")
-                        continue
-                    }
-                    val n = (consecutiveInside[b.id] ?: 0) + 1
-                    consecutiveInside[b.id] = n
-                    val confident = d + acc <= b.radius + 5f
-                    if (n < 2 && !confident) {
-                        Log.d(TAG, "in zone '${b.name}' first fix d=${d.toInt()}m - wait for confirmation fix")
-                        continue
-                    }
-                } else {
-                    consecutiveInside[b.id] = 2
+            val exitMargin = max(10f, min(acc * 0.6f, 25f))
+            val staying = wasInside[b.id] == true && d <= b.radius + exitMargin
+            val inside = d <= b.radius || staying
+            if (!inside) {
+                consecutiveInside[b.id] = 0
+                wasInside[b.id] = false
+                if (b.lastTriggeredAt != 0L && d > b.radius + exitMargin) {
+                    b.lastTriggeredAt = 0L
+                    changed = true
                 }
-                if (now - b.lastTriggeredAt > intervalMs) {
-                    if (b.autoCall) {
-                        Log.i(TAG, "In zone: '${b.name}' d=${d.toInt()}m -> auto dial ${b.phone}")
-                        if (placeCall(b.phone)) {
-                            b.lastTriggeredAt = now
-                            changed = true
-                            RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
-                        } else {
-                            Log.w(TAG, "Call to '${b.phone}' was NOT placed.")
-                        }
-                    } else {
-                        Log.i(TAG, "In zone: '${b.name}' auto-call off -> notify")
-                        showCallPrompt(b)
+                continue
+            }
+            wasInside[b.id] = true
+            if (!gpsOk) {
+                Log.d(TAG, "in zone '${b.name}' but not GPS — wait")
+                continue
+            }
+            val needAcc = if (b.autoCall) max(8f, min(b.radius * 0.8f, 18f))
+            else max(12f, min(b.radius, 25f))
+            if (acc > needAcc) {
+                consecutiveInside[b.id] = 0
+                Log.d(TAG, "in zone '${b.name}' acc ±${acc.toInt()}m > ${needAcc.toInt()}m")
+                continue
+            }
+            val n = (consecutiveInside[b.id] ?: 0) + 1
+            consecutiveInside[b.id] = n
+            val confident = d + acc <= b.radius
+            val needN = if (b.autoCall) 2 else 1
+            if (!confident && n < needN) {
+                Log.d(TAG, "in zone '${b.name}' confirm $n/$needN d=${d.toInt()}m")
+                continue
+            }
+            if (now - b.lastTriggeredAt > intervalMs) {
+                if (b.autoCall) {
+                    Log.i(TAG, "In zone: '${b.name}' d=${d.toInt()}m ±${acc.toInt()}m -> dial")
+                    if (placeCall(b.phone)) {
                         b.lastTriggeredAt = now
                         changed = true
                         RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
+                    } else {
+                        Log.w(TAG, "Call to '${b.phone}' was NOT placed.")
                     }
-                }
-            } else {
-                consecutiveInside[b.id] = 0
-                if (b.lastTriggeredAt != 0L) {
-                    // We left the zone - clear the cooldown so the next entry
-                    // calls right away instead of waiting out the old timer.
-                    b.lastTriggeredAt = 0L
+                } else {
+                    Log.i(TAG, "In zone: '${b.name}' notify")
+                    showCallPrompt(b)
+                    b.lastTriggeredAt = now
                     changed = true
+                    RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
                 }
             }
         }
@@ -974,6 +1024,13 @@ class BarrierService : Service() {
         releaseWakeLock()
         runCatching { unregisterReceiver(wifiReceiver) }
         runCatching { unregisterReceiver(powerReceiver) }
+        KeepAlive.schedule(this)
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+}
+hing { unregisterReceiver(powerReceiver) }
         KeepAlive.schedule(this)
         super.onDestroy()
     }
