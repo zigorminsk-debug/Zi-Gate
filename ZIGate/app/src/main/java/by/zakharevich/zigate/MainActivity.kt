@@ -1007,28 +1007,69 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val column = LinearLayout(context).apply {
+        val title = TextView(context).apply {
+            text = getString(R.string.wifi_dialog_title)
+            textSize = 20f
+            setTextColor(ContextCompat.getColor(context, R.color.text_primary))
+            setPadding(m, (18 * density).toInt(), m, (8 * density).toInt())
+        }
+        val scroll = ScrollView(context).apply {
+            isFillViewport = true
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(listContainer)
+                addView(emptyHint)
+            })
+        }
+        val cancelBtn = com.google.android.material.button.MaterialButton(context).apply {
+            text = getString(R.string.btn_cancel)
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(context, R.color.text_secondary))
+            setBackgroundColor(0)
+        }
+        val doneBtn = com.google.android.material.button.MaterialButton(context).apply {
+            text = getString(R.string.btn_wifi_done)
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(context, R.color.white_on_primary))
+            setBackgroundColor(ContextCompat.getColor(context, R.color.primary))
+        }
+        val btnRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(m, (6 * density).toInt(), m, (14 * density).toInt())
+            addView(cancelBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(
+                doneBtn,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f)
+                    .apply { setMargins((10 * density).toInt(), 0, 0, 0) }
+            )
+        }
+        val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            addView(manualRow)
-            addView(listContainer)
-            addView(emptyHint)
+            background = ContextCompat.getDrawable(context, R.drawable.dialog_bg)
+            addView(title, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(manualRow, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(scroll, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(btnRow, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         }
-
-        val dialog = AlertDialog.Builder(context, R.style.Theme_ZIGate_Dialog)
-            .setTitle(R.string.wifi_dialog_title)
-            .setView(column)
-            .setNegativeButton(R.string.btn_cancel, null)
-            .setPositiveButton(R.string.btn_wifi_done, null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                Settings.setWifiPauseSet(this, selected)
-                startServiceRefresh()
-                renderSettings()
-                dialog.dismiss()
-            }
+        val dialog = android.app.Dialog(context, R.style.Theme_ZIGate_Dialog)
+        doneBtn.setOnClickListener {
+            Settings.setWifiPauseSet(this, selected)
+            startServiceRefresh()
+            renderSettings()
+            dialog.dismiss()
         }
+        cancelBtn.setOnClickListener { dialog.dismiss() }
         dialog.setOnDismissListener { runCatching { unregisterReceiver(scanReceiver) } }
+        dialog.setContentView(root)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        val lp = dialog.window?.attributes
+        lp?.width = resources.displayMetrics.widthPixels
+        lp?.height = (resources.displayMetrics.heightPixels * 0.8f).toInt()
+        dialog.window?.attributes = lp
         dialog.show()
     }
 
