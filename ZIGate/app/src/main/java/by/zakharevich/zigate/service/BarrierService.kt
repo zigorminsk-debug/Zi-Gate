@@ -412,6 +412,9 @@ class BarrierService : Service() {
         if (charging || warmupRemaining > 0) return false
         if (lastMotionElapsed == 0L) return false
         if (kotlin.math.abs(lastRadialVelocity) > 0.8f) return false
+        val d = distanceToNearest()
+        // Never park GPS within ~180 m of a gate — 60 s sleep misses a 5–10 m zone.
+        if (d == null || d < 180f) return false
         return SystemClock.elapsedRealtime() - lastMotionElapsed > IDLE_AFTER_MS
     }
 
@@ -815,9 +818,11 @@ class BarrierService : Service() {
             if (!b.enabled || !hasCoords(b)) continue
             val d = AdaptivePolling.distanceMeters(loc.latitude, loc.longitude, b.lat, b.lng)
             val intervalMs = (b.repeatIntervalSec.coerceIn(5, 180)) * 1000L
-            val exitMargin = max(10f, min(acc * 0.6f, 25f))
+            val hitPad = min(if (acc.isFinite()) acc * 0.4f else 8f, 12f)
+            val hitR = b.radius + hitPad
+            val exitMargin = max(12f, min(acc * 0.6f, 28f))
             val staying = wasInside[b.id] == true && d <= b.radius + exitMargin
-            val inside = d <= b.radius || staying
+            val inside = d <= hitR || staying
             if (!inside) {
                 consecutiveInside[b.id] = 0
                 wasInside[b.id] = false
@@ -832,8 +837,8 @@ class BarrierService : Service() {
                 Log.d(TAG, "in zone '${b.name}' but not GPS — wait")
                 continue
             }
-            val needAcc = if (b.autoCall) max(8f, min(b.radius * 0.8f, 18f))
-            else max(12f, min(b.radius, 25f))
+            // Phone GPS at a gate is often ±10–20 m; a 5 m radius must still fire.
+            val needAcc = 25f
             if (acc > needAcc) {
                 consecutiveInside[b.id] = 0
                 Log.d(TAG, "in zone '${b.name}' acc ±${acc.toInt()}m > ${needAcc.toInt()}m")
@@ -841,9 +846,9 @@ class BarrierService : Service() {
             }
             val n = (consecutiveInside[b.id] ?: 0) + 1
             consecutiveInside[b.id] = n
-            val confident = d + acc <= b.radius
-            val needN = if (b.autoCall) 2 else 1
-            if (!confident && n < needN) {
+            val deep = d <= b.radius
+            val needN = if (deep || !b.autoCall) 1 else 2
+            if (n < needN) {
                 Log.d(TAG, "in zone '${b.name}' confirm $n/$needN d=${d.toInt()}m")
                 continue
             }
