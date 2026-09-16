@@ -1030,10 +1030,3 @@ class BarrierService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 }
-hing { unregisterReceiver(powerReceiver) }
-        KeepAlive.schedule(this)
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-}
