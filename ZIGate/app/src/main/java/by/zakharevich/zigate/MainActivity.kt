@@ -345,6 +345,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderBarriers() {
+        for (item in barrierItems) {
+            item.findViewById<SwitchMaterial>(R.id.switch_auto_call)
+                ?.setOnCheckedChangeListener(null)
+        }
         barriersContainer.removeAllViews()
         barrierItems.clear()
         val list = BarrierStore.load(this)
@@ -395,17 +399,20 @@ class MainActivity : AppCompatActivity() {
         // Record the current GPS point as this barrier's coordinates.
         val autoSw = item.findViewById<SwitchMaterial>(R.id.switch_auto_call)
         autoSw.setOnCheckedChangeListener(null)
+        autoSw.isSaveEnabled = false
         autoSw.isChecked = b.autoCall
+        autoSw.jumpDrawablesToCurrentState()
         autoSw.setOnCheckedChangeListener { _, checked ->
+            if (!autoSw.isAttachedToWindow) return@setOnCheckedChangeListener
             val list = BarrierStore.load(this).toMutableList()
             val idx = list.indexOfFirst { it.id == b.id }
             if (idx >= 0) {
-                list[idx] = list[idx].copy(autoCall = checked)
+                if (list[idx].autoCall == checked) return@setOnCheckedChangeListener
+                list[idx].autoCall = checked
                 BarrierStore.save(this, list)
                 barriersCache = list
             }
             startServiceRefresh()
-            renderSettings()
         }
         item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_record_coord)
             .setOnClickListener { recordCoordinates(b) }

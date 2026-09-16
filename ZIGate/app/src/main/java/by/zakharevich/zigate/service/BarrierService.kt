@@ -783,7 +783,59 @@ class BarrierService : Service() {
                 }
             }
         }
-        if (changed) BarrierStore.save(this, barriers)
+        if (changed) persistTriggerState()
+    }
+
+    /** Write only cooldown fields so a UI toggle of autoCall cannot be overwritten. */
+    private fun persistTriggerState() {
+        val disk = BarrierStore.load(this)
+        val byId = barriers.associateBy { it.id }
+        for (i in disk.indices) {
+            val fresh = byId[disk[i].id] ?: continue
+            disk[i].lastTriggeredAt = fresh.lastTriggeredAt
+        }
+        BarrierStore.save(this, disk)
+        for (d in disk) {
+            val mem = barriers.find { it.id == d.id } ?: continue
+            mem.autoCall = d.autoCall
+            mem.enabled = d.enabled
+        }
+    }
+
+    private fun showCallPrompt(b: Barrier) {
+        val phone = DialHelper.normalize(b.phone)
+        if (phone.isEmpty()) return
+        runCatching {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                "zigate:callprompt"
+            ).acquire(3000L)
+        }
+        val act = Intent(this, by.zakharevich.zigate.CallNowActivity::class.java)
+            .putExtra(by.zakharevich.zigate.CallNowActivity.EXTRA_PHONE, phone)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val callPi = PendingIntent.getActivity(this, b.id.hashCode(), act, flags)
+        val notif = NotificationCompat.Builder(this, App.CHANNEL_PROMPT)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(getString(R.string.notif_call_title, b.name))
+            .setContentText(getString(R.string.notif_call_body, phone))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .setAutoCancel(true)
+            .setContentIntent(callPi)
+            .setFullScreenIntent(callPi, true)
+            .addAction(0, getString(R.string.notif_call_action), callPi)
+            .build()
+        runCatching {
+            androidx.core.app.NotificationManagerCompat.from(this)
+                .notify(2000 + (b.id.hashCode() and 0x0fff), notif)
+        }
     }
 
     private fun showCallPrompt(b: Barrier) {
