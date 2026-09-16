@@ -105,6 +105,7 @@ class BarrierService : Service() {
 
     private var pausedByWifi = false
     private var currentSsid: String? = null
+    private var currentRssi: Int? = null
     private var charging = false
     private var onLearnedRoute = false
 
@@ -145,6 +146,9 @@ class BarrierService : Service() {
         /** After this long without movement, drop GPS and poll network slowly. */
         private const val IDLE_AFTER_MS = 45_000L
         private const val IDLE_PERIOD_MS = 60_000L
+        /** Pause GPS only when home Wi-Fi is strong (inside), not from the street. */
+        private const val WIFI_PAUSE_RSSI_ON = -70
+        private const val WIFI_PAUSE_RSSI_OFF = -78
 
         // ---- provider regime (battery optimisation, v1.16) ----
         /** Within this distance to the nearest barrier we run full GPS:
@@ -179,6 +183,7 @@ class BarrierService : Service() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 WifiManager.NETWORK_STATE_CHANGED_ACTION,
+                WifiManager.RSSI_CHANGED_ACTION,
                 ConnectivityManager.CONNECTIVITY_ACTION -> {
                     recomputeWifiState()
                     updateLocationRegistration()
@@ -217,6 +222,7 @@ class BarrierService : Service() {
 
         val filter = IntentFilter().apply {
             addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(WifiManager.RSSI_CHANGED_ACTION)
             addAction(ConnectivityManager.CONNECTIVITY_ACTION)
         }
         // System wifi/connectivity broadcasts require an exported receiver on API 33+.
@@ -967,10 +973,19 @@ class BarrierService : Service() {
     private fun recomputeWifiState() {
         val wasPaused = pausedByWifi
         currentSsid = currentWifiSsid()
-        pausedByWifi = !charging &&
-                Settings.isWifiGateEnabled(this) &&
+        currentRssi = currentWifiRssi()
+        val listed = Settings.isWifiGateEnabled(this) &&
                 currentSsid != null &&
                 wifiPause.contains(currentSsid)
+        val rssi = currentRssi
+        val strongEnough = if (rssi == null || rssi <= -120) {
+            false
+        } else if (wasPaused) {
+            rssi >= WIFI_PAUSE_RSSI_OFF
+        } else {
+            rssi >= WIFI_PAUSE_RSSI_ON
+        }
+        pausedByWifi = !charging && listed && strongEnough
 
         // A WiFi network we were paused on just dropped -> resume with a short
         // burst of fast fixes so the distance to the nearest barrier is
@@ -990,6 +1005,14 @@ class BarrierService : Service() {
             val plugged = st?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
             plugged != 0
         }.getOrDefault(false)
+    }
+
+    private fun currentWifiRssi(): Int? {
+        val wm = wm ?: return null
+        return runCatching {
+            val r = wm.connectionInfo?.rssi ?: return null
+            if (r >= 0 || r <= -120) null else r
+        }.getOrNull()
     }
 
     private fun currentWifiSsid(): String? {
@@ -1042,6 +1065,7 @@ class BarrierService : Service() {
                 ) == PackageManager.PERMISSION_GRANTED,
                 pausedByWifi = pausedByWifi,
                 wifiSsid = currentSsid,
+                wifiRssi = currentRssi,
                 hasFix = hasFix,
                 lat = lastLat,
                 lng = lastLng,

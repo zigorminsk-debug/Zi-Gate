@@ -1114,10 +1114,24 @@ class MainActivity : AppCompatActivity() {
             s.nearestDistance != null -> nearestLabel(s.nearestDistance!!)
             else -> getString(R.string.status_waiting)
         }
-        findViewById<TextView>(R.id.status_wifi).text =
-            if (s.pausedByWifi && s.wifiSsid != null) s.wifiSsid
-            else if (s.running && !s.pausedByWifi) getString(R.string.status_none)
-            else getString(R.string.status_none)
+        findViewById<TextView>(R.id.status_wifi).text = run {
+            val ssid = s.wifiSsid
+            val rssi = s.wifiRssi
+            val level = when {
+                rssi == null -> null
+                rssi >= -55 -> "сильный"
+                rssi >= -70 -> "норма"
+                rssi >= -80 -> "слабый"
+                else -> "очень слабый"
+            }
+            val db = if (rssi != null) " · ${rssi} дБм" else ""
+            val qual = if (level != null) " $level" else ""
+            when {
+                ssid == null -> getString(R.string.status_none)
+                s.pausedByWifi -> "$ssid$db$qual · пауза"
+                else -> "$ssid$db$qual"
+            }
+        }
         findViewById<TextView>(R.id.status_lastfix).text =
             if (s.hasFix && s.lat != null && s.lng != null) {
                 val d = s.nearestDistance
