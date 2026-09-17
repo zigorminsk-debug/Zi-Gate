@@ -106,6 +106,8 @@ class BarrierService : Service() {
     private var pausedByWifi = false
     private var currentSsid: String? = null
     private var currentRssi: Int? = null
+    /** Keep GPS hot after leaving home Wi-Fi. */
+    private var forceGpsUntilElapsed: Long = 0L
     private var charging = false
     private var onLearnedRoute = false
 
@@ -148,7 +150,10 @@ class BarrierService : Service() {
         private const val IDLE_PERIOD_MS = 60_000L
         /** Pause GPS only when home Wi-Fi is strong (inside), not from the street. */
         private const val WIFI_PAUSE_RSSI_ON = -70
-        private const val WIFI_PAUSE_RSSI_OFF = -78
+        /** Leave pause as soon as the signal is no longer “inside”. */
+        private const val WIFI_PAUSE_RSSI_OFF = -70
+        /** Aggressive GPS after Wi-Fi drop / weak home signal. */
+        private const val WIFI_LEAVE_GPS_MS = 120_000L
 
         // ---- provider regime (battery optimisation, v1.16) ----
         /** Within this distance to the nearest barrier we run full GPS:
@@ -414,13 +419,17 @@ class BarrierService : Service() {
         }
     }
 
+    private fun forcingGps(): Boolean =
+        SystemClock.elapsedRealtime() < forceGpsUntilElapsed
+
     private fun isIdleStationary(): Boolean {
-        if (charging || warmupRemaining > 0) return false
+        if (charging || warmupRemaining > 0 || forcingGps()) return false
         if (lastMotionElapsed == 0L) return false
         if (kotlin.math.abs(lastRadialVelocity) > 0.8f) return false
         val d = distanceToNearest()
-        // Never park GPS within ~180 m of a gate — 60 s sleep misses a 5–10 m zone.
-        if (d == null || d < 180f) return false
+        if (d == null || d < 400f) return false
+        val fixAge = System.currentTimeMillis() - lastFixTimeMs
+        if (hasFix && fixAge > 15_000L) return false
         return SystemClock.elapsedRealtime() - lastMotionElapsed > IDLE_AFTER_MS
     }
 
@@ -488,7 +497,8 @@ class BarrierService : Service() {
         }
         val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
         val approaching = lastRadialVelocity < -0.8f
-        val wantGps = charging || warmupRemaining > 0 ||
+        val wantGps = charging || warmupRemaining > 0 || forcingGps() ||
+                gpsStarving() ||
                 (!idle && (gpsNear || approaching || dist == null))
         val minDist = when {
             charging || warmupRemaining > 0 -> 0f
@@ -972,6 +982,7 @@ class BarrierService : Service() {
     // ---------------- wifi ----------------
     private fun recomputeWifiState() {
         val wasPaused = pausedByWifi
+        val prevSsid = currentSsid
         currentSsid = currentWifiSsid()
         currentRssi = currentWifiRssi()
         val listed = Settings.isWifiGateEnabled(this) &&
@@ -980,17 +991,20 @@ class BarrierService : Service() {
         val rssi = currentRssi
         val strongEnough = if (rssi == null || rssi <= -120) {
             false
-        } else if (wasPaused) {
-            rssi >= WIFI_PAUSE_RSSI_OFF
         } else {
             rssi >= WIFI_PAUSE_RSSI_ON
         }
         pausedByWifi = !charging && listed && strongEnough
 
-        // A WiFi network we were paused on just dropped -> resume with a short
-        // burst of fast fixes so the distance to the nearest barrier is
-        // re-measured (the adaptive model should not start from a stale guess).
-        if (wasPaused && !pausedByWifi) {
+        val disconnected = prevSsid != null && currentSsid == null
+        val ssidChanged = prevSsid != null && currentSsid != null && prevSsid != currentSsid
+        val leftPause = wasPaused && !pausedByWifi
+        val leavingHome = listed && rssi != null && rssi < WIFI_PAUSE_RSSI_ON
+        val shouldBurst = leftPause || disconnected || ssidChanged ||
+                (leavingHome && !forcingGps())
+        if (shouldBurst && !pausedByWifi) {
+            forceGpsUntilElapsed = SystemClock.elapsedRealtime() + WIFI_LEAVE_GPS_MS
+            lastMotionElapsed = SystemClock.elapsedRealtime()
             startWarmup()
         }
     }
