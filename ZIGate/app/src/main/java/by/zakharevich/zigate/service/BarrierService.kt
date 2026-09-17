@@ -108,6 +108,7 @@ class BarrierService : Service() {
     private var currentRssi: Int? = null
     /** Keep GPS hot after leaving home Wi-Fi. */
     private var forceGpsUntilElapsed: Long = 0L
+    private var pendingMotionBurst = false
     private var charging = false
     private var onLearnedRoute = false
 
@@ -148,6 +149,9 @@ class BarrierService : Service() {
         /** After this long without movement, drop GPS and poll network slowly. */
         private const val IDLE_AFTER_MS = 45_000L
         private const val IDLE_PERIOD_MS = 60_000L
+        /** Resting near a gate (no Wi-Fi, no charge): GPS every 20 s. */
+        private const val ZONE_REST_M = 400f
+        private const val ZONE_REST_PERIOD_MS = 20_000L
         /** Pause GPS only when home Wi-Fi is strong (inside), not from the street. */
         private const val WIFI_PAUSE_RSSI_ON = -70
         /** Leave pause as soon as the signal is no longer “inside”. */
@@ -422,15 +426,27 @@ class BarrierService : Service() {
     private fun forcingGps(): Boolean =
         SystemClock.elapsedRealtime() < forceGpsUntilElapsed
 
-    private fun isIdleStationary(): Boolean {
+    private fun isStationaryLongEnough(): Boolean {
         if (charging || warmupRemaining > 0 || forcingGps()) return false
         if (lastMotionElapsed == 0L) return false
         if (kotlin.math.abs(lastRadialVelocity) > 0.8f) return false
+        return SystemClock.elapsedRealtime() - lastMotionElapsed > IDLE_AFTER_MS
+    }
+
+    /** Sitting still within ~400 m of a gate, no charge, no home Wi-Fi pause. */
+    private fun isZoneRest(): Boolean {
+        if (!isStationaryLongEnough()) return false
+        val d = distanceToNearest() ?: return false
+        return d < ZONE_REST_M
+    }
+
+    private fun isIdleStationary(): Boolean {
+        if (!isStationaryLongEnough()) return false
         val d = distanceToNearest()
-        if (d == null || d < 400f) return false
+        if (d == null || d < ZONE_REST_M) return false
         val fixAge = System.currentTimeMillis() - lastFixTimeMs
         if (hasFix && fixAge > 15_000L) return false
-        return SystemClock.elapsedRealtime() - lastMotionElapsed > IDLE_AFTER_MS
+        return true
     }
 
     private fun gpsStarving(): Boolean {
@@ -471,13 +487,16 @@ class BarrierService : Service() {
 
         val dist = distanceToNearest()
         val idle = isIdleStationary()
+        val zoneRest = isZoneRest()
         val provider = chooseProvider(dist)
         val periodHint = when {
             warmupRemaining > 0 -> WARMUP_PERIOD_MS
+            zoneRest -> ZONE_REST_PERIOD_MS
             idle && !charging -> IDLE_PERIOD_MS
             else -> periodFor(provider)
         }
-        val needWake = charging || warmupRemaining > 0 || (!idle && periodHint <= 2_000L)
+        val needWake = charging || warmupRemaining > 0 ||
+                (!idle && !zoneRest && periodHint <= 2_000L)
         if (needWake) acquireWakeLock() else releaseWakeLock()
 
         if (!hasFix && warmupRemaining == 0) {
@@ -492,22 +511,25 @@ class BarrierService : Service() {
 
         val period = when {
             warmupRemaining > 0 -> WARMUP_PERIOD_MS
+            zoneRest -> ZONE_REST_PERIOD_MS
             idle && !charging -> IDLE_PERIOD_MS
             else -> periodFor(provider)
         }
         val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
         val approaching = lastRadialVelocity < -0.8f
         val wantGps = charging || warmupRemaining > 0 || forcingGps() ||
-                gpsStarving() ||
+                gpsStarving() || zoneRest ||
                 (!idle && (gpsNear || approaching || dist == null))
         val minDist = when {
             charging || warmupRemaining > 0 -> 0f
+            zoneRest -> 5f
             idle -> 30f
             gpsNear && !idle -> 0f
             dist != null && dist < 800f -> 15f
             else -> 40f
         }
         val dualKey = when {
+            zoneRest -> "zone-rest"
             wantGps -> "dual"
             idle -> "idle-net"
             else -> provider
@@ -661,7 +683,10 @@ class BarrierService : Service() {
             val speed = if (loc.hasSpeed()) loc.speed else Float.NaN
             val moving = !speed.isNaN() && speed >= MOVING_SPEED_MS
             val driftRadius = (max(newAcc, oldAcc) * 1.2f + 8f).coerceIn(15f, 60f)
-            if (!moving && dMove < driftRadius) {
+            val zoneWalk = isZoneRest() && dMove > 8f
+            if (zoneWalk) {
+                pendingMotionBurst = true
+            } else if (!moving && dMove < driftRadius) {
                 lastRadialVelocity *= 0.5f
                 if (loc.hasAccuracy() &&
                     (lastAccuracy == null || loc.accuracy < lastAccuracy!!)
@@ -688,7 +713,12 @@ class BarrierService : Service() {
         }
         checkTriggers(smoothed)
 
-        // Adapt the sampling rate to the current distance AND radial speed.
+        if (pendingMotionBurst) {
+            pendingMotionBurst = false
+            startWarmup()
+            publishStatus()
+            return
+        }
         updateLocationRegistration()
         publishStatus()
     }
@@ -761,8 +791,12 @@ class BarrierService : Service() {
         val moving = (loc.hasSpeed() && loc.speed >= MOVING_SPEED_MS) ||
                 kotlin.math.abs(lastRadialVelocity) > 0.8f
         val nowEl = SystemClock.elapsedRealtime()
-        if (moving) lastMotionElapsed = nowEl
-        else if (lastMotionElapsed == 0L) lastMotionElapsed = nowEl
+        val wasResting = lastMotionElapsed != 0L &&
+                nowEl - lastMotionElapsed > IDLE_AFTER_MS
+        if (moving) {
+            if (wasResting) pendingMotionBurst = true
+            lastMotionElapsed = nowEl
+        } else if (lastMotionElapsed == 0L) lastMotionElapsed = nowEl
     }
 
     /** Sanity gate for raw fixes: rejects stale / coarse / mock / zero ones. */
@@ -810,6 +844,7 @@ class BarrierService : Service() {
 
     private fun currentPeriod(): Long {
         if (charging) return AdaptivePolling.CHARGE_PERIOD_MS
+        if (isZoneRest()) return ZONE_REST_PERIOD_MS
         if (isIdleStationary()) return IDLE_PERIOD_MS
         val nearest = nearestBarrier()
         if (nearest == null) return AdaptivePolling.MAX_PERIOD_MS
