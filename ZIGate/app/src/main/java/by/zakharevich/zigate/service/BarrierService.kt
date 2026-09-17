@@ -149,9 +149,8 @@ class BarrierService : Service() {
         /** After this long without movement, drop GPS and poll network slowly. */
         private const val IDLE_AFTER_MS = 45_000L
         private const val IDLE_PERIOD_MS = 60_000L
-        /** Resting near a gate (no Wi-Fi, no charge): GPS every 20 s. */
+        /** Resting near a gate (no Wi-Fi, no charge). */
         private const val ZONE_REST_M = 400f
-        private const val ZONE_REST_PERIOD_MS = 20_000L
         /** Pause GPS only when home Wi-Fi is strong (inside), not from the street. */
         private const val WIFI_PAUSE_RSSI_ON = -70
         /** Leave pause as soon as the signal is no longer “inside”. */
@@ -440,6 +439,17 @@ class BarrierService : Service() {
         return d < ZONE_REST_M
     }
 
+    /** Closer rest → shorter GPS tick: 150 m / 5 s, 200 m / 10 s, 300 m / 15 s. */
+    private fun zoneRestPeriodMs(): Long {
+        val d = distanceToNearest() ?: return 20_000L
+        return when {
+            d <= 150f -> 5_000L
+            d <= 200f -> 10_000L
+            d <= 300f -> 15_000L
+            else -> 20_000L
+        }
+    }
+
     private fun isIdleStationary(): Boolean {
         if (!isStationaryLongEnough()) return false
         val d = distanceToNearest()
@@ -491,7 +501,7 @@ class BarrierService : Service() {
         val provider = chooseProvider(dist)
         val periodHint = when {
             warmupRemaining > 0 -> WARMUP_PERIOD_MS
-            zoneRest -> ZONE_REST_PERIOD_MS
+            zoneRest -> zoneRestPeriodMs()
             idle && !charging -> IDLE_PERIOD_MS
             else -> periodFor(provider)
         }
@@ -511,7 +521,7 @@ class BarrierService : Service() {
 
         val period = when {
             warmupRemaining > 0 -> WARMUP_PERIOD_MS
-            zoneRest -> ZONE_REST_PERIOD_MS
+            zoneRest -> zoneRestPeriodMs()
             idle && !charging -> IDLE_PERIOD_MS
             else -> periodFor(provider)
         }
@@ -844,7 +854,7 @@ class BarrierService : Service() {
 
     private fun currentPeriod(): Long {
         if (charging) return AdaptivePolling.CHARGE_PERIOD_MS
-        if (isZoneRest()) return ZONE_REST_PERIOD_MS
+        if (isZoneRest()) return zoneRestPeriodMs()
         if (isIdleStationary()) return IDLE_PERIOD_MS
         val nearest = nearestBarrier()
         if (nearest == null) return AdaptivePolling.MAX_PERIOD_MS
