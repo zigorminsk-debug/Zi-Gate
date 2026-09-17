@@ -32,8 +32,13 @@ object KeepAlive {
         val pi = pending(app)
         runCatching {
             when {
-                Build.VERSION.SDK_INT >= 31 && am.canScheduleExactAlarms() ->
-                    am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, t, pi)
+                Build.VERSION.SDK_INT >= 31 -> {
+                    if (am.canScheduleExactAlarms()) {
+                        am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, t, pi)
+                    } else {
+                        am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, t, pi)
+                    }
+                }
                 Build.VERSION.SDK_INT >= 23 ->
                     am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, t, pi)
                 else -> am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, t, pi)

@@ -1337,7 +1337,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun importFromUri(uri: Uri) {
         val text = runCatching {
-            contentResolver.openInputStream(uri)?.use { it.bufferedReader(Charsets.UTF_8).readText() }
+            if (uri.scheme == "file") {
+                uri.path?.let { java.io.File(it).readText(Charsets.UTF_8) }
+            } else {
+                contentResolver.openInputStream(uri)?.use { it.bufferedReader(Charsets.UTF_8).readText() }
+            }
         }.getOrNull()
         if (text.isNullOrBlank()) {
             Toast.makeText(this, R.string.share_bad, Toast.LENGTH_LONG).show()
