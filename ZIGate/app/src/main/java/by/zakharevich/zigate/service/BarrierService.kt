@@ -151,10 +151,10 @@ class BarrierService : Service() {
         private const val IDLE_PERIOD_MS = 60_000L
         /** Resting near a gate (no Wi-Fi, no charge). */
         private const val ZONE_REST_M = 400f
-        /** Pause on listed SSID. Unknown RSSI still pauses (many phones hide dBm). */
-        private const val WIFI_PAUSE_RSSI_ON = -80
-        /** Resume GPS only when the signal is really gone / street-weak. */
-        private const val WIFI_PAUSE_RSSI_OFF = -88
+        /** Pause only on a solid home signal (UI «норма»/«сильный»). */
+        private const val WIFI_PAUSE_RSSI_ON = -70
+        /** Street-weak: drop pause (UI «слабый»). */
+        private const val WIFI_PAUSE_RSSI_OFF = -75
         /** Aggressive GPS after Wi-Fi drop / weak home signal. */
         private const val WIFI_LEAVE_GPS_MS = 120_000L
 
@@ -1046,9 +1046,11 @@ class BarrierService : Service() {
                 ssid != null &&
                 wifiPause.any { it.equals(ssid, ignoreCase = true) }
         val rssi = currentRssi
+        // Unknown / missing dBm is not "strong" — otherwise a street-side
+        // association keeps GPS paused until the AP fully drops.
         val strongEnough = when {
             !listed -> false
-            rssi == null -> true
+            rssi == null -> false
             wasPaused -> rssi >= WIFI_PAUSE_RSSI_OFF
             else -> rssi >= WIFI_PAUSE_RSSI_ON
         }
@@ -1077,10 +1079,22 @@ class BarrierService : Service() {
     }
 
     private fun currentWifiRssi(): Int? {
+        fun valid(r: Int?): Int? =
+            if (r == null || r >= 0 || r <= -127) null else r
+        if (Build.VERSION.SDK_INT >= 31) {
+            runCatching {
+                val cm = cm ?: return@runCatching
+                val network = cm.activeNetwork ?: return@runCatching
+                val caps = cm.getNetworkCapabilities(network) ?: return@runCatching
+                val info = caps.transportInfo
+                if (info is android.net.wifi.WifiInfo) {
+                    valid(info.rssi)?.let { return it }
+                }
+            }
+        }
         val wm = wm ?: return null
         return runCatching {
-            val r = wm.connectionInfo?.rssi ?: return null
-            if (r == 0 || r <= -127) null else r
+            valid(wm.connectionInfo?.rssi)
         }.getOrNull()
     }
 
