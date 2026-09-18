@@ -547,7 +547,7 @@ class BarrierService : Service() {
             else -> provider
         }
         if (registered && dualKey == currentProvider &&
-            abs(period - currentIntervalMs) < 2_000
+            abs(period - currentIntervalMs) < 400
         ) return
 
         stopLocation()
@@ -670,8 +670,8 @@ class BarrierService : Service() {
                 warmupFixes.clear()
                 warmupRemaining = 0
                 if (best != null) {
+                    // Warm-up never dials: one coarse sample must not count as entry.
                     acceptFix(best, fromWarmup = true)
-                    checkTriggers(best)
                 }
             }
             updateLocationRegistration()
@@ -909,29 +909,33 @@ class BarrierService : Service() {
             }
             val n = (consecutiveInside[b.id] ?: 0) + 1
             consecutiveInside[b.id] = n
-            val deep = d <= b.radius
-            val needN = if (deep || !b.autoCall) 1 else 2
+            val firstEntry = b.lastTriggeredAt == 0L
+            val deep = d <= b.radius && acc <= 20f
+            val needN = when {
+                !b.autoCall || !firstEntry -> 1
+                deep -> 1
+                else -> 2
+            }
             if (n < needN) {
                 Log.d(TAG, "in zone '${b.name}' confirm $n/$needN d=${d.toInt()}m")
                 continue
             }
-            if (now - b.lastTriggeredAt > intervalMs) {
-                if (b.autoCall) {
-                    Log.i(TAG, "In zone: '${b.name}' d=${d.toInt()}m ±${acc.toInt()}m -> dial")
-                    if (placeCall(b.phone)) {
-                        b.lastTriggeredAt = now
-                        changed = true
-                        RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
-                    } else {
-                        Log.w(TAG, "Call to '${b.phone}' was NOT placed.")
-                    }
-                } else {
-                    Log.i(TAG, "In zone: '${b.name}' notify")
-                    showCallPrompt(b)
+            if (!firstEntry && now - b.lastTriggeredAt <= intervalMs) continue
+            if (firstEntry && b.autoCall) {
+                Log.i(TAG, "In zone first: '${b.name}' d=${d.toInt()}m ±${acc.toInt()}m -> dial")
+                if (placeCall(b.phone)) {
                     b.lastTriggeredAt = now
                     changed = true
                     RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
+                } else {
+                    Log.w(TAG, "Call to '${b.phone}' was NOT placed.")
                 }
+            } else {
+                Log.i(TAG, "In zone: '${b.name}' notify (repeat or no-auto)")
+                showCallPrompt(b)
+                b.lastTriggeredAt = now
+                changed = true
+                RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
             }
         }
         if (changed) persistTriggerState()
