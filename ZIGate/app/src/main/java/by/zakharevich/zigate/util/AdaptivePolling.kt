@@ -102,29 +102,4 @@ object AdaptivePolling {
         val delta = Math.toRadians((bearingDeg - bearingToTargetDeg).toDouble())
         return (-speedMs * cos(delta)).toFloat()
     }
-
-    /** Initial bearing from A to B, degrees 0..360. */
-    fun bearingDegrees(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Float {
-        val φ1 = Math.toRadians(lat1)
-        val φ2 = Math.toRadians(lat2)
-        val Δλ = Math.toRadians(lng2 - lng1)
-        val y = sin(Δλ) * cos(φ2)
-        val x = cos(φ1) * sin(φ2) - sin(φ1) * cos(φ2) * cos(Δλ)
-        var brng = Math.toDegrees(atan2(y, x))
-        if (brng < 0) brng += 360.0
-        return brng.toFloat()
-    }
-
-    /**
-     * Radial speed toward a target (m/s). Negative = approaching.
-     * Uses GPS speed/bearing when present (much less noisy than Δd).
-     */
-    fun radialSpeedFromGps(
-        speedMs: Float,
-        bearingDeg: Float,
-        bearingToTargetDeg: Float
-    ): Float {
-        val delta = Math.toRadians((bearingDeg - bearingToTargetDeg).toDouble())
-        return (-speedMs * cos(delta)).toFloat()
-    }
 }
