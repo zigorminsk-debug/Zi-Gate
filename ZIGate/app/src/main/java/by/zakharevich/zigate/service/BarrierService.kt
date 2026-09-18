@@ -881,9 +881,13 @@ class BarrierService : Service() {
             if (!b.enabled || !hasCoords(b)) continue
             val d = AdaptivePolling.distanceMeters(loc.latitude, loc.longitude, b.lat, b.lng)
             val intervalMs = (b.repeatIntervalSec.coerceIn(5, 180)) * 1000L
-            val hitPad = min(if (acc.isFinite()) acc * 0.4f else 8f, 12f)
+            // No large accuracy pad: a 5 m zone must not become 17 m.
+            // Pad ≤ 25% of radius and ≤ 4 m, and only if the GPS is already tight.
+            val hitPad = if (acc.isFinite() && acc <= 12f)
+                min(acc * 0.15f, min(4f, b.radius * 0.25f))
+            else 0f
             val hitR = b.radius + hitPad
-            val exitMargin = max(12f, min(acc * 0.6f, 28f))
+            val exitMargin = max(6f, min(if (acc.isFinite()) acc * 0.3f else 6f, 10f))
             val staying = wasInside[b.id] == true && d <= b.radius + exitMargin
             val inside = d <= hitR || staying
             if (!inside) {
@@ -895,27 +899,28 @@ class BarrierService : Service() {
                 }
                 continue
             }
-            wasInside[b.id] = true
             if (!gpsOk) {
                 Log.d(TAG, "in zone '${b.name}' but not GPS — wait")
                 continue
             }
-            // Phone GPS at a gate is often ±10–20 m; a 5 m radius must still fire.
-            val needAcc = 25f
+            // Accuracy must not dwarf the zone (false hits at 20–25 m ±acc).
+            val needAcc = min(18f, max(10f, b.radius + 6f))
             if (acc > needAcc) {
                 consecutiveInside[b.id] = 0
                 Log.d(TAG, "in zone '${b.name}' acc ±${acc.toInt()}m > ${needAcc.toInt()}m")
                 continue
             }
+            // Center of the fix must lie in the circle (or tiny pad). Stay-inside
+            // hysteresis only keeps cooldown, it does not count as a new hit.
+            if (d > hitR) {
+                consecutiveInside[b.id] = 0
+                continue
+            }
+            wasInside[b.id] = true
             val n = (consecutiveInside[b.id] ?: 0) + 1
             consecutiveInside[b.id] = n
             val firstEntry = b.lastTriggeredAt == 0L
-            val deep = d <= b.radius && acc <= 20f
-            val needN = when {
-                !b.autoCall || !firstEntry -> 1
-                deep -> 1
-                else -> 2
-            }
+            val needN = 2
             if (n < needN) {
                 Log.d(TAG, "in zone '${b.name}' confirm $n/$needN d=${d.toInt()}m")
                 continue
