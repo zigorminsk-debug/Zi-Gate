@@ -151,10 +151,10 @@ class BarrierService : Service() {
         private const val IDLE_PERIOD_MS = 60_000L
         /** Resting near a gate (no Wi-Fi, no charge). */
         private const val ZONE_REST_M = 400f
-        /** Pause GPS only when home Wi-Fi is strong (inside), not from the street. */
-        private const val WIFI_PAUSE_RSSI_ON = -70
-        /** Leave pause as soon as the signal is no longer “inside”. */
-        private const val WIFI_PAUSE_RSSI_OFF = -70
+        /** Pause on listed SSID. Unknown RSSI still pauses (many phones hide dBm). */
+        private const val WIFI_PAUSE_RSSI_ON = -80
+        /** Resume GPS only when the signal is really gone / street-weak. */
+        private const val WIFI_PAUSE_RSSI_OFF = -88
         /** Aggressive GPS after Wi-Fi drop / weak home signal. */
         private const val WIFI_LEAVE_GPS_MS = 120_000L
 
@@ -1036,24 +1036,23 @@ class BarrierService : Service() {
         val prevSsid = currentSsid
         currentSsid = currentWifiSsid()
         currentRssi = currentWifiRssi()
+        val ssid = currentSsid
         val listed = Settings.isWifiGateEnabled(this) &&
-                currentSsid != null &&
-                wifiPause.contains(currentSsid)
+                ssid != null &&
+                wifiPause.any { it.equals(ssid, ignoreCase = true) }
         val rssi = currentRssi
-        val strongEnough = if (rssi == null || rssi <= -120) {
-            false
-        } else {
-            rssi >= WIFI_PAUSE_RSSI_ON
+        val strongEnough = when {
+            !listed -> false
+            rssi == null -> true
+            wasPaused -> rssi >= WIFI_PAUSE_RSSI_OFF
+            else -> rssi >= WIFI_PAUSE_RSSI_ON
         }
-        pausedByWifi = !charging && listed && strongEnough
+        pausedByWifi = listed && strongEnough
 
         val disconnected = prevSsid != null && currentSsid == null
         val ssidChanged = prevSsid != null && currentSsid != null && prevSsid != currentSsid
         val leftPause = wasPaused && !pausedByWifi
-        val leavingHome = listed && rssi != null && rssi < WIFI_PAUSE_RSSI_ON
-        val shouldBurst = leftPause || disconnected || ssidChanged ||
-                (leavingHome && !forcingGps())
-        if (shouldBurst && !pausedByWifi) {
+        if ((leftPause || disconnected || ssidChanged) && !pausedByWifi) {
             forceGpsUntilElapsed = SystemClock.elapsedRealtime() + WIFI_LEAVE_GPS_MS
             lastMotionElapsed = SystemClock.elapsedRealtime()
             startWarmup()
@@ -1076,7 +1075,7 @@ class BarrierService : Service() {
         val wm = wm ?: return null
         return runCatching {
             val r = wm.connectionInfo?.rssi ?: return null
-            if (r >= 0 || r <= -120) null else r
+            if (r == 0 || r <= -127) null else r
         }.getOrNull()
     }
 
