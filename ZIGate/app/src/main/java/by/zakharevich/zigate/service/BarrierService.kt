@@ -18,6 +18,7 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
@@ -117,6 +118,16 @@ class BarrierService : Service() {
     private var lastBarrierIds: Set<String> = emptySet()
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private val watchdog = Handler(Looper.getMainLooper())
+    private val watchdogTick = object : Runnable {
+        override fun run() {
+            if (!pausedByWifi && Settings.isAutoEnabled(this@BarrierService)) {
+                updateLocationRegistration()
+                publishStatus()
+            }
+            watchdog.postDelayed(this, WATCHDOG_MS)
+        }
+    }
     /** When no usable GPS arrived for this long, accept coarser network fixes. */
     private var lastGoodGpsElapsed: Long = 0L
 
@@ -148,7 +159,9 @@ class BarrierService : Service() {
         private const val MAX_JUMP_MPS = 50f
         /** After this long without movement, drop GPS and poll network slowly. */
         private const val IDLE_AFTER_MS = 45_000L
-        private const val IDLE_PERIOD_MS = 60_000L
+        /** Far rest: network only. 60 s was why a 50 m approach still showed 60 s. */
+        private const val IDLE_PERIOD_MS = 20_000L
+        private const val WATCHDOG_MS = 8_000L
         /** Resting near a gate (no Wi-Fi, no charge). */
         private const val ZONE_REST_M = 400f
         /** Pause only on a solid home signal (UI «норма»/«сильный»). */
@@ -248,9 +261,9 @@ class BarrierService : Service() {
         charging = isChargingNow()
 
         startAsForeground()
-        acquireWakeLock()
         seedLastKnown()
         KeepAlive.schedule(this)
+        watchdog.postDelayed(watchdogTick, WATCHDOG_MS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -474,7 +487,8 @@ class BarrierService : Service() {
         val near = distanceToNearest()
         val close = near != null && near < 250f
         if (isGpsFix(loc)) return if (close) 40f else GPS_FIX_ACCURACY_MAX_M
-        if (close) return 0f // reject network next to the gate
+        // Network next to the gate is only a motion hint (never a trigger).
+        if (close) return 120f
         return if (gpsStarving()) STARVE_NET_ACCURACY_MAX_M else NET_FIX_ACCURACY_MAX_M
     }
 
@@ -529,16 +543,20 @@ class BarrierService : Service() {
         }
         val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
         val approaching = lastRadialVelocity < -0.8f
+        val recentlyMoving = lastMotionElapsed != 0L &&
+                SystemClock.elapsedRealtime() - lastMotionElapsed < 20_000L
+        // GPS only while moving toward a gate / charging / short wifi-leave burst.
+        // Sitting at 50–200 m with GPS 5 s is what burned 4.5 h of GPS.
         val wantGps = charging || warmupRemaining > 0 || forcingGps() ||
-                gpsStarving() || zoneRest ||
-                (!idle && (gpsNear || approaching || dist == null))
+                approaching ||
+                (!idle && !zoneRest && gpsNear && recentlyMoving) ||
+                (dist == null && recentlyMoving)
         val minDist = when {
             charging || warmupRemaining > 0 -> 0f
-            zoneRest -> 5f
-            idle -> 30f
-            gpsNear && !idle -> 0f
-            dist != null && dist < 800f -> 15f
-            else -> 40f
+            zoneRest || idle -> 8f
+            gpsNear && wantGps -> 0f
+            dist != null && dist < 800f -> 10f
+            else -> 25f
         }
         val dualKey = when {
             zoneRest -> "zone-rest"
@@ -638,8 +656,8 @@ class BarrierService : Service() {
         val near = distanceToNearest()
         val gpsFresh = lastGpsElapsed != 0L &&
                 SystemClock.elapsedRealtime() - lastGpsElapsed < 12_000L
-        if (!isGpsFix(loc) && (gpsFresh || (near != null && near < 350f))) {
-            Log.d(TAG, "drop network near gate / while GPS is fresh")
+        if (!isGpsFix(loc) && gpsFresh) {
+            Log.d(TAG, "drop network while GPS is fresh")
             return
         }
         if (hasFix && lastLat != null && lastLng != null) {
@@ -1158,13 +1176,18 @@ class BarrierService : Service() {
                 gpsWarmup = warmupRemaining > 0,
                 fixTimeMs = if (hasFix) lastFixTimeMs else null,
                 inZone = inZone,
-                pollPeriodMs = if (!pausedByWifi && warmupRemaining > 0) WARMUP_PERIOD_MS
-                else currentProvider?.let { periodFor(it) } ?: currentPeriod()
+                pollPeriodMs = when {
+                    pausedByWifi -> 0L
+                    warmupRemaining > 0 -> WARMUP_PERIOD_MS
+                    currentIntervalMs > 0L -> currentIntervalMs
+                    else -> currentPeriod()
+                }
             )
         )
     }
 
     override fun onDestroy() {
+        watchdog.removeCallbacks(watchdogTick)
         stopLocation()
         releaseWakeLock()
         runCatching { unregisterReceiver(wifiReceiver) }
