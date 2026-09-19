@@ -78,8 +78,8 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
 
-      - name: Attach APK to GitHub Release
-        if: github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+      - name: Publish GitHub Release (in-app updater)
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -87,13 +87,11 @@ jobs:
           APK="${{ steps.apk.outputs.path }}"
           VER="${{ steps.apk.outputs.version }}"
           REPO="${{ github.repository }}"
-          if [ "${{ github.event_name }}" = "release" ]; then
-            TAG="${{ github.event.release.tag_name }}"
-          else
-            TAG="${GITHUB_REF_NAME}"
-          fi
+          TAG="v${VER}"
+          NOTES="ZI Gate ${VER}. Установите APK; приложение само предложит следующие версии."
           if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber -R "$REPO"
+            gh release edit "$TAG" --latest -R "$REPO" || true
           else
-            gh release create "$TAG" "$APK" --title "ZI Gate v${VER}" --generate-notes -R "$REPO"
+            gh release create "$TAG" "$APK" --title "ZI Gate v${VER}" --notes "$NOTES" --latest -R "$REPO"
           fi

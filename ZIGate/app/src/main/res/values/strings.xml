@@ -10,6 +10,14 @@
     <string name="btn_send_file">Отправить</string>
     <string name="btn_receive_file">Получить</string>
     <string name="btn_help">Справка</string>
+    <string name="update_title">Новая версия ZI Gate</string>
+    <string name="update_msg">Доступна версия %1$s (у вас %2$s). Скачать и установить?</string>
+    <string name="update_now">Обновить</string>
+    <string name="update_later">Позже</string>
+    <string name="update_downloading">Скачивание обновления…</string>
+    <string name="update_fail">Не удалось скачать обновление</string>
+    <string name="update_none">У вас последняя версия</string>
+    <string name="update_need_unknown">Разрешите установку из этого приложения, затем нажмите версию ещё раз</string>
     <string name="help_title">Справка ZI Gate</string>
     <string name="send_pick_title">Какие шлагбаумы отправить?</string>
     <string name="send_none">Выберите хотя бы один шлагбаум</string>

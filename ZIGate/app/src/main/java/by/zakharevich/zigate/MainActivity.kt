@@ -43,6 +43,7 @@ import by.zakharevich.zigate.model.Barrier
 import by.zakharevich.zigate.service.BarrierService
 import by.zakharevich.zigate.service.ServiceStatus
 import by.zakharevich.zigate.util.AdaptivePolling
+import by.zakharevich.zigate.util.AppUpdate
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
@@ -149,8 +150,10 @@ class MainActivity : AppCompatActivity() {
         runCatching {
             barriersContainer = findViewById(R.id.barriers_container)
             tvEmpty = findViewById(R.id.tv_empty)
-            findViewById<TextView>(R.id.tv_version).text =
-                "ZI Gate v${BuildConfig.VERSION_NAME} · ${BuildConfig.DEVELOPER}"
+            findViewById<TextView>(R.id.tv_version).apply {
+                text = "ZI Gate v${BuildConfig.VERSION_NAME} · ${BuildConfig.DEVELOPER}"
+                setOnClickListener { checkForAppUpdate(force = true) }
+            }
         }
         runCatching { bindActions() }
         runCatching { renderBarriers() }
@@ -158,6 +161,7 @@ class MainActivity : AppCompatActivity() {
         runCatching { renderStatus(ServiceStatus.empty()) }
         runCatching { requestCriticalPermissions() }
         runCatching { handleIncomingIntent(intent) }
+        runCatching { checkForAppUpdate(force = false) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -1490,6 +1494,46 @@ class MainActivity : AppCompatActivity() {
             conn.disconnect()
             code in 200..299
         } catch (e: Exception) { false }
+    }
+
+    private var updateDialogShown = false
+
+    private fun checkForAppUpdate(force: Boolean) {
+        lifecycleScope.launch {
+            val rel = withContext(Dispatchers.IO) { AppUpdate.latestNewerThan() }
+            if (isFinishing) return@launch
+            if (rel == null) {
+                if (force) Toast.makeText(this@MainActivity, R.string.update_none, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            if (!force && updateDialogShown) return@launch
+            updateDialogShown = true
+            AlertDialog.Builder(this@MainActivity, R.style.Theme_ZIGate_Dialog)
+                .setTitle(R.string.update_title)
+                .setMessage(getString(R.string.update_msg, rel.version, BuildConfig.VERSION_NAME))
+                .setNegativeButton(R.string.update_later, null)
+                .setPositiveButton(R.string.update_now) { _, _ -> downloadAndInstall(rel) }
+                .show()
+        }
+    }
+
+    private fun downloadAndInstall(rel: AppUpdate.Release) {
+        if (Build.VERSION.SDK_INT >= 26 && !AppUpdate.canInstall(this)) {
+            Toast.makeText(this, R.string.update_need_unknown, Toast.LENGTH_LONG).show()
+            AppUpdate.requestInstallPermission(this)
+            return
+        }
+        Toast.makeText(this, R.string.update_downloading, Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val file = withContext(Dispatchers.IO) { AppUpdate.downloadApk(this@MainActivity, rel.apkUrl) }
+            if (file == null) {
+                Toast.makeText(this@MainActivity, R.string.update_fail, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (!AppUpdate.installApk(this@MainActivity, file)) {
+                Toast.makeText(this@MainActivity, R.string.update_fail, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun httpGet(url: String): String? {
