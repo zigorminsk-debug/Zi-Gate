@@ -80,6 +80,15 @@
     <string name="section_status">Статус</string>
     <string name="status_service">Служба</string>
     <string name="status_gps">GPS</string>
+    <string name="status_method">Метод</string>
+    <string name="status_method_gps">GPS</string>
+    <string name="status_method_net">сеть</string>
+    <string name="status_method_dual">GPS + сеть</string>
+    <string name="status_method_passive">пассивный</string>
+    <string name="status_method_pause">пауза Wi-Fi</string>
+    <string name="status_method_warmup">GPS (прогрев)</string>
+    <string name="status_method_rest">сеть (покой у зоны)</string>
+    <string name="status_method_idle">сеть (дальше)</string>
     <string name="status_wifi">Wi-Fi</string>
     <string name="status_last_fix">Последняя точка</string>
     <string name="status_poll">Период опроса</string>

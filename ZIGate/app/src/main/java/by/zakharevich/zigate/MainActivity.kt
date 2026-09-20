@@ -1109,6 +1109,17 @@ class MainActivity : AppCompatActivity() {
         latestStatus = s
         findViewById<TextView>(R.id.status_service).text =
             if (s.running) getString(R.string.status_on) else getString(R.string.status_off)
+        findViewById<TextView>(R.id.status_method).text = when (s.locMethod) {
+            "pause" -> getString(R.string.status_method_pause)
+            "warmup" -> getString(R.string.status_method_warmup)
+            "dual" -> getString(R.string.status_method_dual)
+            "gps" -> getString(R.string.status_method_gps)
+            "network" -> getString(R.string.status_method_net)
+            "rest" -> getString(R.string.status_method_rest)
+            "idle" -> getString(R.string.status_method_idle)
+            "passive" -> getString(R.string.status_method_passive)
+            else -> getString(R.string.status_off)
+        }
         findViewById<TextView>(R.id.status_gps).text = when {
             !s.running || !s.autoOn -> getString(R.string.status_off)
             s.pausedByWifi -> "${getString(R.string.status_paused)} · Wi-Fi"
@@ -1144,7 +1155,14 @@ class MainActivity : AppCompatActivity() {
                 val base = if (s.nearestName != null && d != null) "$time · ${s.nearestName}: ${d.toInt()} м"
                 else if (d != null) "$time · ${d.toInt()} м"
                 else "$time · —"
-                if (s.accuracyM != null) "$base (±${s.accuracyM.toInt()} м)" else base
+                val src = when (s.fixSource) {
+                    "gps" -> "GPS"
+                    "network" -> "сеть"
+                    "passive" -> "пасс."
+                    else -> null
+                }
+                val withSrc = if (src != null) "$base · $src" else base
+                if (s.accuracyM != null) "$withSrc (±${s.accuracyM.toInt()} м)" else withSrc
             } else if (s.gpsWarmup) getString(R.string.status_refining)
             else getString(R.string.status_none)
         findViewById<TextView>(R.id.status_poll).text =

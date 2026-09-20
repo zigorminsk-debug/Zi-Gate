@@ -76,6 +76,7 @@ class BarrierService : Service() {
     private var lastFixTimeMs: Long = 0L
     private var hasFix = false
     private var lastFixGps = false
+    private var lastFixSource: String? = null
     private var lastGpsElapsed: Long = 0L
 
     /** Confirmed inside (hysteresis) so GPS jitter does not re-arm the call. */
@@ -772,6 +773,13 @@ class BarrierService : Service() {
         lastFixTimeMs = System.currentTimeMillis()
         hasFix = true
         lastFixGps = isGpsFix(loc) || loc.provider == "zigate-stable" && lastFixGps
+        lastFixSource = when {
+            isGpsFix(loc) -> "gps"
+            loc.provider == LocationManager.NETWORK_PROVIDER -> "network"
+            loc.provider == LocationManager.PASSIVE_PROVIDER -> "passive"
+            loc.provider == "zigate-stable" -> lastFixSource ?: "gps"
+            else -> loc.provider ?: lastFixSource
+        }
         if (isGpsFix(loc)) {
             lastGoodGpsElapsed = SystemClock.elapsedRealtime()
             lastGpsElapsed = lastGoodGpsElapsed
@@ -1181,7 +1189,20 @@ class BarrierService : Service() {
                     warmupRemaining > 0 -> WARMUP_PERIOD_MS
                     currentIntervalMs > 0L -> currentIntervalMs
                     else -> currentPeriod()
-                }
+                },
+                locMethod = when {
+                    !Settings.isAutoEnabled(this) -> "off"
+                    pausedByWifi -> "pause"
+                    warmupRemaining > 0 -> "warmup"
+                    currentProvider == "dual" -> "dual"
+                    currentProvider == "zone-rest" -> "rest"
+                    currentProvider == "idle-net" -> "idle"
+                    currentProvider == LocationManager.GPS_PROVIDER -> "gps"
+                    currentProvider == LocationManager.NETWORK_PROVIDER -> "network"
+                    currentProvider == LocationManager.PASSIVE_PROVIDER -> "passive"
+                    else -> currentProvider ?: "off"
+                },
+                fixSource = lastFixSource
             )
         )
     }

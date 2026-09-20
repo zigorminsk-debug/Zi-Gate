@@ -18,7 +18,11 @@ data class ServiceStatus(
     val gpsWarmup: Boolean,
     val fixTimeMs: Long?,
     val inZone: Boolean,
-    val pollPeriodMs: Long
+    val pollPeriodMs: Long,
+    /** How we currently poll: gps / network / dual / rest / idle / pause. */
+    val locMethod: String,
+    /** Provider of the last accepted fix: gps / network / passive. */
+    val fixSource: String?
 ) {
     companion object {
         fun empty() = ServiceStatus(
@@ -38,7 +42,9 @@ data class ServiceStatus(
             gpsWarmup = false,
             fixTimeMs = null,
             inZone = false,
-            pollPeriodMs = 0L
+            pollPeriodMs = 0L,
+            locMethod = "off",
+            fixSource = null
         )
     }
 }
