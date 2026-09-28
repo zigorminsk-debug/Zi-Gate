@@ -18,6 +18,9 @@
     <string name="update_fail">Не удалось скачать обновление</string>
     <string name="update_none">У вас последняя версия</string>
     <string name="update_need_unknown">Разрешите установку из этого приложения, затем нажмите версию ещё раз</string>
+    <string name="notif_update_channel">Обновления</string>
+    <string name="notif_update_title">ZI Gate %1$s готова</string>
+    <string name="notif_update_body">Нажмите, чтобы установить обновление с GitHub</string>
     <string name="help_title">О программе</string>
     <string name="btn_check_update">Проверить обновление на GitHub</string>
     <string name="about_github">Обновления: github.com/zigorminsk-debug/Zi-Gate</string>

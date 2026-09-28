@@ -49,8 +49,14 @@ class App : Application() {
                 )
             }
             val nm = getSystemService(NotificationManager::class.java)
+            val update = NotificationChannel(
+                CHANNEL_UPDATE,
+                getString(R.string.notif_update_channel),
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply { description = getString(R.string.notif_update_body) }
             nm?.createNotificationChannel(channel)
             nm?.createNotificationChannel(prompt)
+            nm?.createNotificationChannel(update)
         }
     }
 
@@ -104,6 +110,7 @@ class App : Application() {
     companion object {
         const val CHANNEL_ID = "zi_gate_service"
         const val CHANNEL_PROMPT = "zi_gate_call_prompt"
+        const val CHANNEL_UPDATE = "zi_gate_update"
         private const val TAG = "ZIGATE"
     }
 }

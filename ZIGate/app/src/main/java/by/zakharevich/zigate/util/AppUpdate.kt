@@ -1,11 +1,18 @@
 package by.zakharevich.zigate.util
 
+import android.app.Notification
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import by.zakharevich.zigate.App
 import by.zakharevich.zigate.BuildConfig
+import by.zakharevich.zigate.MainActivity
+import by.zakharevich.zigate.R
+import by.zakharevich.zigate.data.Settings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -124,6 +131,44 @@ object AppUpdate {
         return if (Build.VERSION.SDK_INT >= 26)
             context.packageManager.canRequestPackageInstalls()
         else true
+    }
+
+    const val EXTRA_INSTALL = "install_update"
+    private const val CHECK_EVERY_MS = 6 * 60 * 60 * 1000L
+    private const val NOTIF_ID = 2101
+
+    fun cachedApk(context: Context): File =
+        File(File(context.cacheDir, "update").apply { mkdirs() }, "ZI-Gate-update.apk")
+
+    /** Background: at most every 6 h, download if GitHub has a newer APK, then notify. */
+    fun maybeBackground(context: Context) {
+        val app = context.applicationContext
+        val now = System.currentTimeMillis()
+        if (now - Settings.lastUpdateCheckMs(app) < CHECK_EVERY_MS) return
+        Settings.setLastUpdateCheckMs(app, now)
+        val rel = latestNewerThan() ?: return
+        val file = downloadApk(app, rel.apkUrl) ?: return
+        notifyReady(app, rel.version, file)
+    }
+
+    fun notifyReady(context: Context, version: String, file: File) {
+        val open = Intent(context, MainActivity::class.java)
+            .putExtra(EXTRA_INSTALL, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pi = PendingIntent.getActivity(context, NOTIF_ID, open, flags)
+        val n = NotificationCompat.Builder(context, App.CHANNEL_UPDATE)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(context.getString(R.string.notif_update_title, version))
+            .setContentText(context.getString(R.string.notif_update_body))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pi)
+            .addAction(0, context.getString(R.string.update_now), pi)
+            .build()
+        runCatching {
+            androidx.core.app.NotificationManagerCompat.from(context).notify(NOTIF_ID, n)
+        }
     }
 
     fun requestInstallPermission(context: Context) {

@@ -10,6 +10,7 @@ object Settings {
     private const val KEY_WIFI_GATE = "wifi_gate_enabled"
     private const val KEY_WIFI_SET = "wifi_pause_ssids"
     private const val KEY_PAUSE_CODE = "pause_code"
+    private const val KEY_UPDATE_CHECK = "last_update_check_ms"
 
     // ---------- auto open ----------
     fun isAutoEnabled(context: Context): Boolean =
@@ -38,6 +39,12 @@ object Settings {
 
     fun setPauseCode(context: Context, value: String) =
         prefs(context).edit().putString(KEY_PAUSE_CODE, value).apply()
+
+    fun lastUpdateCheckMs(context: Context): Long =
+        prefs(context).getLong(KEY_UPDATE_CHECK, 0L)
+
+    fun setLastUpdateCheckMs(context: Context, value: Long) =
+        prefs(context).edit().putLong(KEY_UPDATE_CHECK, value).apply()
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

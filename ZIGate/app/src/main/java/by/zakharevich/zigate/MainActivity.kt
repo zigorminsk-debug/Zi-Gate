@@ -161,13 +161,20 @@ class MainActivity : AppCompatActivity() {
         runCatching { renderStatus(ServiceStatus.empty()) }
         runCatching { requestCriticalPermissions() }
         runCatching { handleIncomingIntent(intent) }
-        runCatching { checkForAppUpdate(force = false) }
+        if (intent?.getBooleanExtra(AppUpdate.EXTRA_INSTALL, false) == true) {
+            runCatching { installCachedUpdate() }
+        } else {
+            runCatching { checkForAppUpdate(force = false) }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
+        if (intent.getBooleanExtra(AppUpdate.EXTRA_INSTALL, false)) {
+            installCachedUpdate()
+        }
     }
 
     override fun onStart() {
@@ -1539,7 +1546,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkForAppUpdate(force: Boolean) {
         lifecycleScope.launch {
-            val rel = withContext(Dispatchers.IO) { AppUpdate.latestNewerThan() }
+            val rel = withContext(Dispatchers.IO) {
+                val r = AppUpdate.latestNewerThan()
+                if (r != null && !force) {
+                    AppUpdate.downloadApk(this@MainActivity, r.apkUrl)
+                }
+                r
+            }
             if (isFinishing) return@launch
             if (rel == null) {
                 if (force) Toast.makeText(this@MainActivity, R.string.update_none, Toast.LENGTH_SHORT).show()
@@ -1551,8 +1564,28 @@ class MainActivity : AppCompatActivity() {
                 .setTitle(R.string.update_title)
                 .setMessage(getString(R.string.update_msg, rel.version, BuildConfig.VERSION_NAME))
                 .setNegativeButton(R.string.update_later, null)
-                .setPositiveButton(R.string.update_now) { _, _ -> downloadAndInstall(rel) }
+                .setPositiveButton(R.string.update_now) { _, _ ->
+                    val cached = AppUpdate.cachedApk(this@MainActivity)
+                    if (cached.isFile && cached.length() > 10_000) installCachedUpdate()
+                    else downloadAndInstall(rel)
+                }
                 .show()
+        }
+    }
+
+    private fun installCachedUpdate() {
+        if (Build.VERSION.SDK_INT >= 26 && !AppUpdate.canInstall(this)) {
+            Toast.makeText(this, R.string.update_need_unknown, Toast.LENGTH_LONG).show()
+            AppUpdate.requestInstallPermission(this)
+            return
+        }
+        val file = AppUpdate.cachedApk(this)
+        if (!file.isFile || file.length() < 10_000) {
+            checkForAppUpdate(force = true)
+            return
+        }
+        if (!AppUpdate.installApk(this, file)) {
+            Toast.makeText(this, R.string.update_fail, Toast.LENGTH_LONG).show()
         }
     }
 

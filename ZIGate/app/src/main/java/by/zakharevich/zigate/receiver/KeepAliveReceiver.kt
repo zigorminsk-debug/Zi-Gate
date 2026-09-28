@@ -14,6 +14,14 @@ class KeepAliveReceiver : BroadcastReceiver() {
             a == Intent.ACTION_USER_PRESENT
         ) {
             KeepAlive.startServiceIfNeeded(context)
+            val pending = goAsync()
+            Thread {
+                try {
+                    by.zakharevich.zigate.util.AppUpdate.maybeBackground(context)
+                } finally {
+                    pending.finish()
+                }
+            }.start()
         }
     }
 }
