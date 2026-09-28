@@ -9,10 +9,10 @@ class AdaptivePollingTest {
     @Test
     fun nearBands() {
         assertEquals(1000L, AdaptivePolling.intervalMs(40f, 5f))
-        assertEquals(2000L, AdaptivePolling.intervalMs(120f, 5f))
-        assertEquals(3000L, AdaptivePolling.intervalMs(220f, 5f))
-        assertEquals(5000L, AdaptivePolling.intervalMs(350f, 5f))
-        assertEquals(15_000L, AdaptivePolling.intervalMs(600f, 5f))
+        assertEquals(1000L, AdaptivePolling.intervalMs(120f, 5f))
+        assertEquals(2000L, AdaptivePolling.intervalMs(180f, 5f))
+        assertEquals(3000L, AdaptivePolling.intervalMs(250f, 5f))
+        assertEquals(10_000L, AdaptivePolling.intervalMs(600f, 5f))
     }
 
     @Test

@@ -47,13 +47,13 @@ object AdaptivePolling {
         val v = radialSpeedMs.coerceIn(-SPEED_CAP, SPEED_CAP)
 
         var period = when {
-            d <= 80f -> 1_000L
-            d <= 150f -> 2_000L
-            d <= 250f -> 3_000L
-            d <= 400f -> 5_000L
-            d <= 800f -> 15_000L
-            d <= 1500f -> 30_000L
-            else -> 60_000L
+            d <= 120f -> 1_000L
+            d <= 200f -> 2_000L
+            d <= 300f -> 3_000L
+            d <= 500f -> 5_000L
+            d <= 800f -> 10_000L
+            d <= 1500f -> 20_000L
+            else -> 30_000L
         }
 
         if (stationary && d > 400f) period = MAX_STATIONARY_MS

@@ -162,7 +162,7 @@ class BarrierService : Service() {
         private const val IDLE_AFTER_MS = 45_000L
         /** Far rest: network only. 60 s was why a 50 m approach still showed 60 s. */
         private const val IDLE_PERIOD_MS = 20_000L
-        private const val WATCHDOG_MS = 8_000L
+        private const val WATCHDOG_MS = 4_000L
         /** Resting near a gate (no Wi-Fi, no charge). */
         private const val ZONE_REST_M = 400f
         /** Pause only on a solid home signal (UI «норма»/«сильный»). */
@@ -543,21 +543,19 @@ class BarrierService : Service() {
             else -> periodFor(provider)
         }
         val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
-        val approaching = lastRadialVelocity < -0.8f
+        val approaching = lastRadialVelocity < -0.5f
         val recentlyMoving = lastMotionElapsed != 0L &&
-                SystemClock.elapsedRealtime() - lastMotionElapsed < 20_000L
-        // GPS only while moving toward a gate / charging / short wifi-leave burst.
-        // Sitting at 50–200 m with GPS 5 s is what burned 4.5 h of GPS.
+                SystemClock.elapsedRealtime() - lastMotionElapsed < 45_000L
+        val close = dist != null && dist < 180f
+        // GPS while approaching / moving near a gate. Rest still uses network
+        // until the first metres of motion (minDist 0 so that step is not skipped).
         val wantGps = charging || warmupRemaining > 0 || forcingGps() ||
                 approaching ||
-                (!idle && !zoneRest && gpsNear && recentlyMoving) ||
-                (dist == null && recentlyMoving)
+                (recentlyMoving && (gpsNear || dist == null || close))
         val minDist = when {
-            charging || warmupRemaining > 0 -> 0f
-            zoneRest || idle -> 8f
-            gpsNear && wantGps -> 0f
-            dist != null && dist < 800f -> 10f
-            else -> 25f
+            charging || warmupRemaining > 0 || wantGps -> 0f
+            zoneRest || idle -> 0f
+            else -> 15f
         }
         val dualKey = when {
             zoneRest -> "zone-rest"
@@ -691,6 +689,10 @@ class BarrierService : Service() {
                 if (best != null) {
                     // Warm-up never dials: one coarse sample must not count as entry.
                     acceptFix(best, fromWarmup = true)
+                    val dWarm = distanceToNearest()
+                    if (dWarm != null && dWarm < 80f && isGpsFix(best)) {
+                        checkTriggers(best)
+                    }
                 }
             }
             updateLocationRegistration()
@@ -746,7 +748,11 @@ class BarrierService : Service() {
 
         if (pendingMotionBurst) {
             pendingMotionBurst = false
-            startWarmup()
+            forceGpsUntilElapsed = SystemClock.elapsedRealtime() + 45_000L
+            val dNow = distanceToNearest() ?: 999f
+            // Near the gate a 6-fix warmup would skip a 5 m zone at city speed.
+            if (dNow > 200f) startWarmup()
+            else updateLocationRegistration()
             publishStatus()
             return
         }
@@ -907,9 +913,11 @@ class BarrierService : Service() {
             if (!b.enabled || !hasCoords(b)) continue
             val d = AdaptivePolling.distanceMeters(loc.latitude, loc.longitude, b.lat, b.lng)
             val intervalMs = (b.repeatIntervalSec.coerceIn(5, 180)) * 1000L
-            // No large accuracy pad: a 5 m zone must not become 17 m.
-            // Pad ≤ 25% of radius and ≤ 4 m, and only if the GPS is already tight.
-            val hitPad = if (acc.isFinite() && acc <= 12f)
+            val approachingHit = lastRadialVelocity < -0.7f
+            // Standing: tiny pad. Driving at the gate: GPS ±10–15 m must still hit a 5 m zone.
+            val hitPad = if (approachingHit)
+                min(if (acc.isFinite()) acc * 0.45f else 10f, 12f)
+            else if (acc.isFinite() && acc <= 12f)
                 min(acc * 0.15f, min(4f, b.radius * 0.25f))
             else 0f
             val hitR = b.radius + hitPad
@@ -930,14 +938,12 @@ class BarrierService : Service() {
                 continue
             }
             // Accuracy must not dwarf the zone (false hits at 20–25 m ±acc).
-            val needAcc = min(18f, max(10f, b.radius + 6f))
+            val needAcc = if (approachingHit) 25f else min(18f, max(10f, b.radius + 6f))
             if (acc > needAcc) {
                 consecutiveInside[b.id] = 0
                 Log.d(TAG, "in zone '${b.name}' acc ±${acc.toInt()}m > ${needAcc.toInt()}m")
                 continue
             }
-            // Center of the fix must lie in the circle (or tiny pad). Stay-inside
-            // hysteresis only keeps cooldown, it does not count as a new hit.
             if (d > hitR) {
                 consecutiveInside[b.id] = 0
                 continue
@@ -946,7 +952,7 @@ class BarrierService : Service() {
             val n = (consecutiveInside[b.id] ?: 0) + 1
             consecutiveInside[b.id] = n
             val firstEntry = b.lastTriggeredAt == 0L
-            val needN = 2
+            val needN = if (approachingHit || (d <= b.radius && acc <= 12f)) 1 else 2
             if (n < needN) {
                 Log.d(TAG, "in zone '${b.name}' confirm $n/$needN d=${d.toInt()}m")
                 continue
