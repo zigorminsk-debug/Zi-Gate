@@ -1182,14 +1182,35 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------- send / receive file ----------------
     private fun showHelp() {
-        val tv = TextView(this).apply {
+        val d = resources.displayMetrics.density
+        val p = (16 * d).toInt()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(p, p, p, p)
+        }
+        col.addView(TextView(this).apply {
+            text = "ZI Gate v${BuildConfig.VERSION_NAME}\n${BuildConfig.DEVELOPER}\n${getString(R.string.about_github)}"
+            textSize = 14f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+        })
+        col.addView(com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.btn_check_update)
+            isAllCaps = false
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.topMargin = (12 * d).toInt()
+            lp.bottomMargin = (8 * d).toInt()
+            layoutParams = lp
+            setOnClickListener { checkForAppUpdate(force = true) }
+        })
+        col.addView(TextView(this).apply {
             text = getString(R.string.help_body)
             textSize = 15f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
-            val p = (16 * resources.displayMetrics.density).toInt()
-            setPadding(p, p, p, p)
-        }
-        val scroll = ScrollView(this).apply { addView(tv) }
+        })
+        val scroll = ScrollView(this).apply { addView(col) }
         AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
             .setTitle(R.string.help_title)
             .setView(scroll)
