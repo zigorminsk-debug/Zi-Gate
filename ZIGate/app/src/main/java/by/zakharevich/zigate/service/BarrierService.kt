@@ -1086,7 +1086,8 @@ class BarrierService : Service() {
             wasPaused -> rssi >= WIFI_PAUSE_RSSI_OFF
             else -> rssi >= WIFI_PAUSE_RSSI_ON
         }
-        pausedByWifi = listed && strongEnough
+        // Charging always runs GPS (1 s), even on a listed home Wi-Fi.
+        pausedByWifi = !charging && listed && strongEnough
 
         val disconnected = prevSsid != null && currentSsid == null
         val ssidChanged = prevSsid != null && currentSsid != null && prevSsid != currentSsid
