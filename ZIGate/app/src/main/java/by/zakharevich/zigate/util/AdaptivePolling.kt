@@ -52,24 +52,24 @@ object AdaptivePolling {
             d <= 300f -> 3_000L
             d <= 500f -> 5_000L
             d <= 800f -> 10_000L
-            d <= 1500f -> 20_000L
-            else -> 30_000L
+            d <= 1500f -> 15_000L
+            else -> 20_000L
         }
 
-        if (stationary && d > 400f) period = MAX_STATIONARY_MS
+        // Never slow down while closing on the gate (city speed).
+        if (stationary && d > 1500f && v >= -0.3f) period = MAX_STATIONARY_MS
 
-        if (v < -0.5f && beyond > 0f) {
+        if (v < -0.4f && beyond > 0f) {
             val etaMs = (beyond / -v) * 1000f
             val look = (etaMs / LOOKAHEAD_SAMPLES).toLong()
             period = min(period, look.coerceAtLeast(MIN_PERIOD_MS))
         }
 
-        if (onRoute && d > 400f) {
+        if (onRoute && d > 400f && v < 0f) {
             period = (period * 0.5f).toLong().coerceAtLeast(MIN_PERIOD_MS)
         }
 
-        val maxAllowed = if (stationary && d > 400f) MAX_STATIONARY_MS else MAX_PERIOD_MS
-        return period.coerceIn(MIN_PERIOD_MS, maxAllowed)
+        return period.coerceIn(MIN_PERIOD_MS, MAX_PERIOD_MS)
     }
 
     fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Float {

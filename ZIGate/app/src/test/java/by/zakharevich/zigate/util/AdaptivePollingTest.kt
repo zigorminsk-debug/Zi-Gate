@@ -29,6 +29,14 @@ class AdaptivePollingTest {
     }
 
     @Test
+    fun fiveHundredMetresMustNotSlowToThirty() {
+        val p = AdaptivePolling.intervalMs(500f, 5f, radialSpeedMs = -12f)
+        assertTrue("period=$p at 500 m closing", p <= 5_000L)
+        val sit = AdaptivePolling.intervalMs(500f, 5f, stationary = true)
+        assertTrue("period=$sit sitting at 500 m", sit <= 5_000L)
+    }
+
+    @Test
     fun farStationarySavesBattery() {
         assertEquals(60_000L, AdaptivePolling.intervalMs(2000f, 5f, stationary = true))
     }

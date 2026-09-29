@@ -427,7 +427,11 @@ class BarrierService : Service() {
         else LocationManager.PASSIVE_PROVIDER
         if (!gpsOk) return LocationManager.NETWORK_PROVIDER
 
-        if (charging || lastRadialVelocity < -1f) return LocationManager.GPS_PROVIDER
+        if (charging || lastRadialVelocity < -0.5f) return LocationManager.GPS_PROVIDER
+        val moving = lastMotionElapsed != 0L &&
+                SystemClock.elapsedRealtime() - lastMotionElapsed < 45_000L
+        if (moving && distToNearest != null && distToNearest < 800f)
+            return LocationManager.GPS_PROVIDER
         val gpsM = if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M
         val netM = gpsM + 120f
         return when {
@@ -469,7 +473,7 @@ class BarrierService : Service() {
     private fun isIdleStationary(): Boolean {
         if (!isStationaryLongEnough()) return false
         val d = distanceToNearest()
-        if (d == null || d < ZONE_REST_M) return false
+        if (d == null || d < 800f) return false
         val fixAge = System.currentTimeMillis() - lastFixTimeMs
         if (hasFix && fixAge > 15_000L) return false
         return true
@@ -543,15 +547,13 @@ class BarrierService : Service() {
             else -> periodFor(provider)
         }
         val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
-        val approaching = lastRadialVelocity < -0.5f
+        val approaching = lastRadialVelocity < -0.4f
         val recentlyMoving = lastMotionElapsed != 0L &&
                 SystemClock.elapsedRealtime() - lastMotionElapsed < 45_000L
         val close = dist != null && dist < 180f
-        // GPS while approaching / moving near a gate. Rest still uses network
-        // until the first metres of motion (minDist 0 so that step is not skipped).
         val wantGps = charging || warmupRemaining > 0 || forcingGps() ||
                 approaching ||
-                (recentlyMoving && (gpsNear || dist == null || close))
+                (recentlyMoving && (dist == null || dist < 800f))
         val minDist = when {
             charging || warmupRemaining > 0 || wantGps -> 0f
             zoneRest || idle -> 0f
@@ -895,7 +897,9 @@ class BarrierService : Service() {
         val d = if (lastLat != null && lastLng != null)
             AdaptivePolling.distanceMeters(lastLat!!, lastLng!!, nearest.lat, nearest.lng)
         else AdaptivePolling.MAX_PERIOD_MS.toFloat()
-        val stationary = kotlin.math.abs(lastRadialVelocity) < 0.4f
+        val recentlyMoving = lastMotionElapsed != 0L &&
+                SystemClock.elapsedRealtime() - lastMotionElapsed < 45_000L
+        val stationary = !recentlyMoving && kotlin.math.abs(lastRadialVelocity) < 0.4f
         return AdaptivePolling.intervalMs(
             d, nearest.radius, lastRadialVelocity,
             charging = false,
