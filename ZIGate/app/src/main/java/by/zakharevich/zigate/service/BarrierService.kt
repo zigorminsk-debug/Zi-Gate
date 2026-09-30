@@ -1136,20 +1136,20 @@ class BarrierService : Service() {
         currentRssi = currentWifiRssi()
         wifiPause = wifiPauseSet()
         val ssid = currentSsid
-        val listed = Settings.isWifiGateEnabled(this) &&
-                ssid != null &&
-                wifiPause.any { WifiNames.same(it, ssid) }
+        val gate = Settings.isWifiGateEnabled(this)
+        val listed = gate && ssid != null && wifiPause.any { WifiNames.same(it, ssid) }
         val rssi = currentRssi
-        val strongEnough = when {
-            !listed -> false
-            rssi == null -> false
+        // −45 dBm next to the AP must pause even if the saved name
+        // does not match (CSL.by vs a listed CSL.by 5 / old StringSet).
+        val strongEnough = rssi != null && when {
             wasPaused -> rssi >= WIFI_PAUSE_RSSI_OFF
             else -> rssi >= WIFI_PAUSE_RSSI_ON
         }
+        val veryStrong = rssi != null && rssi >= -55
         val barrierRest = ssid != null && rssi != null && barriers.any { b ->
             b.wifiSsid.isNotBlank() && WifiNames.same(b.wifiSsid, ssid) && rssi >= b.wifiRssiMin
         }
-        pausedByWifi = (listed && strongEnough) || barrierRest
+        pausedByWifi = barrierRest || (gate && strongEnough && (listed || veryStrong || wifiPause.isEmpty()))
         if (pausedByWifi) {
             warmupRemaining = 0
             warmupFixes.clear()

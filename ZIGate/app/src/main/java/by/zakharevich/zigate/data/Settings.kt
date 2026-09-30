@@ -9,6 +9,7 @@ object Settings {
     private const val KEY_AUTO = "auto_enabled"
     private const val KEY_WIFI_GATE = "wifi_gate_enabled"
     private const val KEY_WIFI_SET = "wifi_pause_ssids"
+    private const val KEY_WIFI_JSON = "wifi_pause_ssids_json"
     private const val KEY_PAUSE_CODE = "pause_code"
     private const val KEY_UPDATE_CHECK = "last_update_check_ms"
 
@@ -26,11 +27,31 @@ object Settings {
     fun setWifiGateEnabled(context: Context, value: Boolean) =
         prefs(context).edit().putBoolean(KEY_WIFI_GATE, value).apply()
 
-    fun wifiPauseSet(context: Context): MutableSet<String> =
-        HashSet(prefs(context).getStringSet(KEY_WIFI_SET, emptySet()) ?: emptySet())
+    fun wifiPauseSet(context: Context): MutableSet<String> {
+        val p = prefs(context)
+        val json = p.getString(KEY_WIFI_JSON, null)
+        if (!json.isNullOrBlank()) {
+            val out = HashSet<String>()
+            runCatching {
+                val arr = org.json.JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val s = arr.optString(i).trim().trim('"')
+                    if (s.isNotEmpty()) out.add(s)
+                }
+            }
+            return out
+        }
+        return HashSet(p.getStringSet(KEY_WIFI_SET, emptySet()) ?: emptySet())
+            .map { it.trim().trim('"') }.filter { it.isNotEmpty() }.toHashSet()
+    }
 
     fun setWifiPauseSet(context: Context, set: Set<String>) {
-        prefs(context).edit().putStringSet(KEY_WIFI_SET, HashSet(set)).apply()
+        val arr = org.json.JSONArray()
+        set.map { it.trim().trim('"') }.filter { it.isNotEmpty() }.sorted().forEach { arr.put(it) }
+        prefs(context).edit()
+            .putString(KEY_WIFI_JSON, arr.toString())
+            .remove(KEY_WIFI_SET)
+            .apply()
     }
 
     // ---------- pause code (for the gate auto-network) ----------
