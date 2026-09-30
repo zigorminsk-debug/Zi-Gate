@@ -109,5 +109,14 @@
             app:iconTint="@color/primary"
             app:cornerRadius="12dp"
             style="@style/Widget.Material3.Button.OutlinedButton" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_train_route"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/btn_train_route"
+            app:cornerRadius="12dp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

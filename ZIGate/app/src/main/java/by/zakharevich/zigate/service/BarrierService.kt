@@ -140,6 +140,10 @@ class BarrierService : Service() {
         const val ACTION_REFRESH = "by.zakharevich.zigate.REFRESH"
         const val ACTION_START = "by.zakharevich.zigate.START"
         const val ACTION_STOP = "by.zakharevich.zigate.STOP"
+        const val ACTION_TRAIN_START = "by.zakharevich.zigate.TRAIN_START"
+        const val ACTION_TRAIN_STOP = "by.zakharevich.zigate.TRAIN_STOP"
+        const val EXTRA_BARRIER_ID = "barrier_id"
+        const val EXTRA_BARRIER_NAME = "barrier_name"
         private const val NOTIF_ID = 1001
         private const val TAG = "ZIGATE"
 
@@ -264,6 +268,7 @@ class BarrierService : Service() {
             this, powerReceiver, powerFilter, ContextCompat.RECEIVER_EXPORTED
         )
         charging = isChargingNow()
+        RouteMemory.restoreTraining(this)
         motionWatch = MotionWatch(this) { onSensorMoved() }
         motionWatch?.start()
         baroWatch = BaroWatch(this).also { it.start() }
@@ -293,7 +298,18 @@ class BarrierService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            else -> {
+            ACTION_TRAIN_START -> {
+                val id = intent.getStringExtra(EXTRA_BARRIER_ID)
+                val name = intent.getStringExtra(EXTRA_BARRIER_NAME) ?: id
+                if (id != null) {
+                    RouteMemory.startLesson(this, id, name ?: id)
+                    forceGpsUntilElapsed = SystemClock.elapsedRealtime() + 180_000L
+                    startWarmup()
+                }
+            }
+            ACTION_TRAIN_STOP -> RouteMemory.stopLesson(this)
+        }
+        if (action != ACTION_STOP) {
                 startAsForeground()
                 barriers = BarrierStore.load(this)
                 wifiPause = wifiPauseSet()
@@ -308,7 +324,6 @@ class BarrierService : Service() {
                 updateLocationRegistration()
                 publishStatus()
                 KeepAlive.schedule(this)
-            }
         }
         return START_STICKY
     }
@@ -571,6 +586,8 @@ class BarrierService : Service() {
                 SystemClock.elapsedRealtime() - lastMotionElapsed < 45_000L
         val wantGps = !accelRest && (charging || warmupRemaining > 0 || forcingGps() ||
                 approaching ||
+                RouteMemory.isTraining() ||
+                (onLearnedRoute && recentlyMoving && (dist == null || dist < 1500f)) ||
                 (recentlyMoving && (dist == null || dist < 800f)))
         val minDist = when {
             charging || warmupRemaining > 0 || wantGps -> 0f
@@ -844,7 +861,8 @@ class BarrierService : Service() {
         prevFixNanos = nowNanos
         prevNearestId = nearest?.id
 
-        RouteMemory.onFix(loc.latitude, loc.longitude)
+        val accNow = if (loc.hasAccuracy()) loc.accuracy else 99f
+        RouteMemory.onFix(this, loc.latitude, loc.longitude, accNow)
         onLearnedRoute = RouteMemory.isOnRoute(this, loc.latitude, loc.longitude)
 
         if (nearest != null && loc.hasSpeed() && loc.speed >= 1.0f && loc.hasBearing()) {
@@ -943,9 +961,11 @@ class BarrierService : Service() {
             val d = AdaptivePolling.distanceMeters(loc.latitude, loc.longitude, b.lat, b.lng)
             val intervalMs = (b.repeatIntervalSec.coerceIn(5, 180)) * 1000L
             val approachingHit = lastRadialVelocity < -0.7f
-            // Standing: tiny pad. Driving at the gate: GPS ±10–15 m must still hit a 5 m zone.
-            val hitPad = if (approachingHit)
-                min(if (acc.isFinite()) acc * 0.45f else 10f, 12f)
+            val onThisRoute = RouteMemory.isOnRoute(this, loc.latitude, loc.longitude, b.id)
+            val trained = RouteMemory.corridorReady(this, b.id)
+            // Standing: tiny pad. On a learned drive / closing: GPS ±15 m still hits 5 m.
+            val hitPad = if (onThisRoute || approachingHit)
+                min(if (acc.isFinite()) acc * 0.5f else 12f, 15f)
             else if (acc.isFinite() && acc <= 12f)
                 min(acc * 0.15f, min(4f, b.radius * 0.25f))
             else 0f
@@ -981,7 +1001,7 @@ class BarrierService : Service() {
             val n = (consecutiveInside[b.id] ?: 0) + 1
             consecutiveInside[b.id] = n
             val firstEntry = b.lastTriggeredAt == 0L
-            val needN = if (approachingHit || (d <= b.radius && acc <= 12f)) 1 else 2
+            val needN = if (onThisRoute || approachingHit || (d <= b.radius && acc <= 12f)) 1 else 2
             if (n < needN) {
                 Log.d(TAG, "in zone '${b.name}' confirm $n/$needN d=${d.toInt()}m")
                 continue
@@ -991,12 +1011,19 @@ class BarrierService : Service() {
                 Log.d(TAG, "skip '${b.name}': upstairs h=${baroWatch?.heightM()}")
                 continue
             }
+            if (trained && firstEntry && b.autoCall && !onThisRoute && !approachingHit) {
+                Log.i(TAG, "off-route '${b.name}' — notify, no autodial")
+                showCallPrompt(b)
+                b.lastTriggeredAt = now
+                changed = true
+                continue
+            }
             if (firstEntry && b.autoCall) {
                 Log.i(TAG, "In zone first: '${b.name}' d=${d.toInt()}m ±${acc.toInt()}m -> dial")
                 if (placeCall(b.phone)) {
                     b.lastTriggeredAt = now
                     changed = true
-                    RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
+                    RouteMemory.onTriggered(this, loc.latitude, loc.longitude, b.id)
                 } else {
                     Log.w(TAG, "Call to '${b.phone}' was NOT placed.")
                 }
@@ -1005,7 +1032,7 @@ class BarrierService : Service() {
                 showCallPrompt(b)
                 b.lastTriggeredAt = now
                 changed = true
-                RouteMemory.onTriggered(this, loc.latitude, loc.longitude)
+                RouteMemory.onTriggered(this, loc.latitude, loc.longitude, b.id)
             }
         }
         if (changed) persistTriggerState()
@@ -1245,7 +1272,9 @@ class BarrierService : Service() {
                 },
                 fixSource = lastFixSource,
                 heightM = baroWatch?.heightM(),
-                floor = baroWatch?.floor()
+                floor = baroWatch?.floor(),
+                onRoute = onLearnedRoute,
+                trainingName = RouteMemory.trainingName
             )
         )
     }

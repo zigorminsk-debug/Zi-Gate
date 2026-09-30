@@ -38,6 +38,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import by.zakharevich.zigate.data.BarrierStore
+import by.zakharevich.zigate.data.RouteMemory
 import by.zakharevich.zigate.data.Settings
 import by.zakharevich.zigate.model.Barrier
 import by.zakharevich.zigate.service.BarrierService
@@ -427,6 +428,43 @@ class MainActivity : AppCompatActivity() {
         }
         item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_record_coord)
             .setOnClickListener { recordCoordinates(b) }
+        val trainBtn = item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_train_route)
+        val trips = RouteMemory.tripsFor(this, b.id)
+        trainBtn.text = when {
+            RouteMemory.trainingId == b.id -> getString(R.string.btn_train_stop)
+            trips >= RouteMemory.LESSONS_OK -> getString(R.string.route_ready, trips)
+            trips > 0 -> getString(R.string.route_learning, trips)
+            else -> getString(R.string.btn_train_route)
+        }
+        trainBtn.setOnClickListener { toggleTrain(b) }
+    }
+
+    private fun toggleTrain(b: Barrier) {
+        if (RouteMemory.trainingId == b.id) {
+            runCatching {
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, BarrierService::class.java).setAction(BarrierService.ACTION_TRAIN_STOP)
+                )
+            }
+            Toast.makeText(this, R.string.train_stopped, Toast.LENGTH_SHORT).show()
+            renderBarriers()
+            return
+        }
+        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
+            .setTitle(R.string.train_title)
+            .setMessage(R.string.train_how)
+            .setNegativeButton(R.string.btn_cancel, null)
+            .setPositiveButton(R.string.btn_train_route) { _, _ ->
+                val i = Intent(this, BarrierService::class.java)
+                    .setAction(BarrierService.ACTION_TRAIN_START)
+                    .putExtra(BarrierService.EXTRA_BARRIER_ID, b.id)
+                    .putExtra(BarrierService.EXTRA_BARRIER_NAME, b.name)
+                runCatching { ContextCompat.startForegroundService(this@MainActivity, i) }
+                Toast.makeText(this, getString(R.string.train_started, b.name), Toast.LENGTH_LONG).show()
+                renderBarriers()
+            }
+            .show()
     }
 
     /** Captures the phone's current position (a fresh GPS fix) and sets it as
@@ -1173,6 +1211,11 @@ class MainActivity : AppCompatActivity() {
                 if (s.accuracyM != null) "$withSrc (±${s.accuracyM.toInt()} м)" else withSrc
             } else if (s.gpsWarmup) getString(R.string.status_refining)
             else getString(R.string.status_none)
+        findViewById<TextView>(R.id.status_route).text = when {
+            !s.trainingName.isNullOrBlank() -> "урок: ${s.trainingName}"
+            s.onRoute -> "свой путь"
+            else -> "—"
+        }
         findViewById<TextView>(R.id.status_height).text = when {
             s.heightM == null -> getString(R.string.status_none)
             s.floor != null && s.floor >= 2 ->
@@ -1218,6 +1261,12 @@ class MainActivity : AppCompatActivity() {
             lp.bottomMargin = (8 * d).toInt()
             layoutParams = lp
             setOnClickListener { checkForAppUpdate(force = true) }
+        })
+        col.addView(TextView(this).apply {
+            text = getString(R.string.train_how)
+            textSize = 14f
+            setPadding(0, (8 * d).toInt(), 0, (8 * d).toInt())
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
         })
         col.addView(TextView(this).apply {
             text = getString(R.string.help_body)

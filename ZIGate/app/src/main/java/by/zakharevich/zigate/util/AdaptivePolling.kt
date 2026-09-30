@@ -65,7 +65,7 @@ object AdaptivePolling {
             period = min(period, look.coerceAtLeast(MIN_PERIOD_MS))
         }
 
-        if (onRoute && d > 400f && v < 0f) {
+        if (onRoute && !stationary) {
             period = (period * 0.5f).toLong().coerceAtLeast(MIN_PERIOD_MS)
         }
 

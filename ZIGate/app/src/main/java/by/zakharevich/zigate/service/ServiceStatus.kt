@@ -24,7 +24,9 @@ data class ServiceStatus(
     /** Provider of the last accepted fix: gps / network / passive. */
     val fixSource: String?,
     val heightM: Float? = null,
-    val floor: Int? = null
+    val floor: Int? = null,
+    val onRoute: Boolean = false,
+    val trainingName: String? = null
 ) {
     companion object {
         fun empty() = ServiceStatus(
