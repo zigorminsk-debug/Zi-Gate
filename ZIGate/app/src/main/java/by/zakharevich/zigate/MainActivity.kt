@@ -1173,6 +1173,12 @@ class MainActivity : AppCompatActivity() {
                 if (s.accuracyM != null) "$withSrc (±${s.accuracyM.toInt()} м)" else withSrc
             } else if (s.gpsWarmup) getString(R.string.status_refining)
             else getString(R.string.status_none)
+        findViewById<TextView>(R.id.status_height).text = when {
+            s.heightM == null -> getString(R.string.status_none)
+            s.floor != null && s.floor >= 2 ->
+                "${s.heightM.toInt()} м · ${s.floor} эт."
+            else -> "${s.heightM.toInt()} м · земля"
+        }
         findViewById<TextView>(R.id.status_poll).text =
             if (s.running && !s.pausedByWifi) "${s.pollPeriodMs / 1000f}s" else "-"
         // Keep the card distances in sync with the same service fix.

@@ -97,6 +97,7 @@
     <string name="status_method_accel">покой (датчик)</string>
     <string name="status_wifi">Wi-Fi</string>
     <string name="status_last_fix">Последняя точка</string>
+    <string name="status_height">Высота</string>
     <string name="status_poll">Период опроса</string>
     <string name="status_none">—</string>
     <string name="status_off">выкл</string>

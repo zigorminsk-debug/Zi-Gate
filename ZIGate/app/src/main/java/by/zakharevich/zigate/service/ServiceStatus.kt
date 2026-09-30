@@ -22,7 +22,9 @@ data class ServiceStatus(
     /** How we currently poll: gps / network / dual / rest / idle / pause. */
     val locMethod: String,
     /** Provider of the last accepted fix: gps / network / passive. */
-    val fixSource: String?
+    val fixSource: String?,
+    val heightM: Float? = null,
+    val floor: Int? = null
 ) {
     companion object {
         fun empty() = ServiceStatus(
@@ -44,7 +46,9 @@ data class ServiceStatus(
             inZone = false,
             pollPeriodMs = 0L,
             locMethod = "off",
-            fixSource = null
+            fixSource = null,
+            heightM = null,
+            floor = null
         )
     }
 }

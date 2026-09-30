@@ -37,6 +37,7 @@ import by.zakharevich.zigate.util.AdaptivePolling
 import by.zakharevich.zigate.util.DialHelper
 import by.zakharevich.zigate.util.KeepAlive
 import by.zakharevich.zigate.util.MotionWatch
+import by.zakharevich.zigate.util.BaroWatch
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
 import kotlin.math.max
@@ -131,6 +132,7 @@ class BarrierService : Service() {
         }
     }
     private var motionWatch: MotionWatch? = null
+    private var baroWatch: BaroWatch? = null
     /** When no usable GPS arrived for this long, accept coarser network fixes. */
     private var lastGoodGpsElapsed: Long = 0L
 
@@ -264,6 +266,7 @@ class BarrierService : Service() {
         charging = isChargingNow()
         motionWatch = MotionWatch(this) { onSensorMoved() }
         motionWatch?.start()
+        baroWatch = BaroWatch(this).also { it.start() }
 
         startAsForeground()
         seedLastKnown()
@@ -860,6 +863,11 @@ class BarrierService : Service() {
             if (wasResting) pendingMotionBurst = true
             lastMotionElapsed = nowEl
         } else if (lastMotionElapsed == 0L) lastMotionElapsed = nowEl
+        if (isGpsFix(loc) && loc.hasSpeed()) {
+            val acc = if (loc.hasAccuracy()) loc.accuracy else 99f
+            val d = distance ?: 999f
+            baroWatch?.noteGround(loc.speed, acc, outdoors = d > 30f || loc.speed >= 2f)
+        }
     }
 
     /** Sanity gate for raw fixes: rejects stale / coarse / mock / zero ones. */
@@ -979,6 +987,10 @@ class BarrierService : Service() {
                 continue
             }
             if (!firstEntry && now - b.lastTriggeredAt <= intervalMs) continue
+            if (baroWatch?.upstairs() == true) {
+                Log.d(TAG, "skip '${b.name}': upstairs h=${baroWatch?.heightM()}")
+                continue
+            }
             if (firstEntry && b.autoCall) {
                 Log.i(TAG, "In zone first: '${b.name}' d=${d.toInt()}m ±${acc.toInt()}m -> dial")
                 if (placeCall(b.phone)) {
@@ -1231,7 +1243,9 @@ class BarrierService : Service() {
                     currentProvider == LocationManager.PASSIVE_PROVIDER -> "passive"
                     else -> currentProvider ?: "off"
                 },
-                fixSource = lastFixSource
+                fixSource = lastFixSource,
+                heightM = baroWatch?.heightM(),
+                floor = baroWatch?.floor()
             )
         )
     }
@@ -1240,6 +1254,8 @@ class BarrierService : Service() {
         watchdog.removeCallbacks(watchdogTick)
         motionWatch?.stop()
         motionWatch = null
+        baroWatch?.stop()
+        baroWatch = null
         stopLocation()
         releaseWakeLock()
         runCatching { unregisterReceiver(wifiReceiver) }
