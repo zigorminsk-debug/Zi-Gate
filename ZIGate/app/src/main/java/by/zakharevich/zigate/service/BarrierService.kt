@@ -36,6 +36,7 @@ import by.zakharevich.zigate.model.Barrier
 import by.zakharevich.zigate.util.AdaptivePolling
 import by.zakharevich.zigate.util.DialHelper
 import by.zakharevich.zigate.util.KeepAlive
+import by.zakharevich.zigate.util.MotionWatch
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
 import kotlin.math.max
@@ -129,6 +130,7 @@ class BarrierService : Service() {
             watchdog.postDelayed(this, WATCHDOG_MS)
         }
     }
+    private var motionWatch: MotionWatch? = null
     /** When no usable GPS arrived for this long, accept coarser network fixes. */
     private var lastGoodGpsElapsed: Long = 0L
 
@@ -260,12 +262,25 @@ class BarrierService : Service() {
             this, powerReceiver, powerFilter, ContextCompat.RECEIVER_EXPORTED
         )
         charging = isChargingNow()
+        motionWatch = MotionWatch(this) { onSensorMoved() }
+        motionWatch?.start()
 
         startAsForeground()
         seedLastKnown()
         KeepAlive.schedule(this)
         watchdog.postDelayed(watchdogTick, WATCHDOG_MS)
     }
+
+    private fun onSensorMoved() {
+        lastMotionElapsed = SystemClock.elapsedRealtime()
+        forceGpsUntilElapsed = SystemClock.elapsedRealtime() + 45_000L
+        val d = distanceToNearest() ?: 999f
+        if (d > 200f) startWarmup() else updateLocationRegistration()
+        publishStatus()
+    }
+
+    private fun sensorResting(): Boolean =
+        !charging && warmupRemaining == 0 && !forcingGps() && motionWatch?.isRest() == true
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -540,26 +555,28 @@ class BarrierService : Service() {
             lastRadialVelocity = 0f
         }
 
+        val accelRest = sensorResting()
         val period = when {
             warmupRemaining > 0 -> WARMUP_PERIOD_MS
+            accelRest -> 30_000L
             zoneRest -> zoneRestPeriodMs()
             idle && !charging -> IDLE_PERIOD_MS
             else -> periodFor(provider)
         }
-        val gpsNear = dist != null && dist < (if (onLearnedRoute) GPS_REGIME_ROUTE_M else GPS_REGIME_M)
         val approaching = lastRadialVelocity < -0.4f
         val recentlyMoving = lastMotionElapsed != 0L &&
                 SystemClock.elapsedRealtime() - lastMotionElapsed < 45_000L
-        val close = dist != null && dist < 180f
-        val wantGps = charging || warmupRemaining > 0 || forcingGps() ||
+        val wantGps = !accelRest && (charging || warmupRemaining > 0 || forcingGps() ||
                 approaching ||
-                (recentlyMoving && (dist == null || dist < 800f))
+                (recentlyMoving && (dist == null || dist < 800f)))
         val minDist = when {
             charging || warmupRemaining > 0 || wantGps -> 0f
+            accelRest -> 40f
             zoneRest || idle -> 0f
             else -> 15f
         }
         val dualKey = when {
+            accelRest -> "accel-rest"
             zoneRest -> "zone-rest"
             wantGps -> "dual"
             idle -> "idle-net"
@@ -1205,6 +1222,7 @@ class BarrierService : Service() {
                     !Settings.isAutoEnabled(this) -> "off"
                     pausedByWifi -> "pause"
                     warmupRemaining > 0 -> "warmup"
+                    currentProvider == "accel-rest" -> "accel"
                     currentProvider == "dual" -> "dual"
                     currentProvider == "zone-rest" -> "rest"
                     currentProvider == "idle-net" -> "idle"
@@ -1220,6 +1238,8 @@ class BarrierService : Service() {
 
     override fun onDestroy() {
         watchdog.removeCallbacks(watchdogTick)
+        motionWatch?.stop()
+        motionWatch = null
         stopLocation()
         releaseWakeLock()
         runCatching { unregisterReceiver(wifiReceiver) }

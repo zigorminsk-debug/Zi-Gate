@@ -1124,6 +1124,7 @@ class MainActivity : AppCompatActivity() {
             "network" -> getString(R.string.status_method_net)
             "rest" -> getString(R.string.status_method_rest)
             "idle" -> getString(R.string.status_method_idle)
+            "accel" -> getString(R.string.status_method_accel)
             "passive" -> getString(R.string.status_method_passive)
             else -> getString(R.string.status_off)
         }

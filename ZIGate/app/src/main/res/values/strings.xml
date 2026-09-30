@@ -94,6 +94,7 @@
     <string name="status_method_warmup">GPS (прогрев)</string>
     <string name="status_method_rest">сеть (покой у зоны)</string>
     <string name="status_method_idle">сеть (дальше)</string>
+    <string name="status_method_accel">покой (датчик)</string>
     <string name="status_wifi">Wi-Fi</string>
     <string name="status_last_fix">Последняя точка</string>
     <string name="status_poll">Период опроса</string>
