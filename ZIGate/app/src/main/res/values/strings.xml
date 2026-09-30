@@ -78,6 +78,15 @@
     <string name="wifi_empty">Список пуст. Введите название сети вручную ниже или включите геолокацию, чтобы приложение могло сканировать видимые сети.</string>
     <string name="hint_wifi_manual">Название сети (SSID)</string>
     <string name="btn_add_wifi">Добавить</string>
+    <string name="btn_wifi_rest">Wi‑Fi покоя</string>
+    <string name="wifi_rest_title">Wi‑Fi покоя у шлагбаума</string>
+    <string name="wifi_rest_level">Сила сигнала для паузы GPS</string>
+    <string name="btn_wifi_current">Текущая сеть</string>
+    <string name="btn_wifi_clear">Сбросить</string>
+    <string name="wifi_lvl_vstrong">очень сильный</string>
+    <string name="wifi_lvl_strong">сильный</string>
+    <string name="wifi_lvl_ok">норма</string>
+    <string name="wifi_lvl_weak">слабый</string>
     <string name="btn_wifi_done">Готово</string>
     <string name="label_pause_code">Код паузы (разрешить подключаться к автосети)</string>
     <string name="hint_pause_code">Код/капча для доступа к шлагбауму</string>

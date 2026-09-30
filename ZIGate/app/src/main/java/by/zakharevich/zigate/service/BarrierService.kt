@@ -1136,18 +1136,20 @@ class BarrierService : Service() {
         val ssid = currentSsid
         val listed = Settings.isWifiGateEnabled(this) &&
                 ssid != null &&
-                wifiPause.any { it.equals(ssid, ignoreCase = true) }
+                wifiPause.any { ssidEq(it, ssid) }
         val rssi = currentRssi
-        // Unknown / missing dBm is not "strong" — otherwise a street-side
-        // association keeps GPS paused until the AP fully drops.
         val strongEnough = when {
             !listed -> false
             rssi == null -> false
             wasPaused -> rssi >= WIFI_PAUSE_RSSI_OFF
             else -> rssi >= WIFI_PAUSE_RSSI_ON
         }
-        // Charging always runs GPS (1 s), even on a listed home Wi-Fi.
-        pausedByWifi = !charging && listed && strongEnough
+        val barrierRest = ssid != null && rssi != null && barriers.any { b ->
+            b.wifiSsid.isNotBlank() && ssidEq(b.wifiSsid, ssid) && rssi >= b.wifiRssiMin
+        }
+        // Strong listed / barrier rest Wi-Fi pauses GPS even on charge
+        // (home AP at −53 dBm must not keep 1 s dual).
+        pausedByWifi = (listed && strongEnough) || barrierRest
 
         val disconnected = prevSsid != null && currentSsid == null
         val ssidChanged = prevSsid != null && currentSsid != null && prevSsid != currentSsid
@@ -1210,13 +1212,19 @@ class BarrierService : Service() {
                 // fall through to the legacy path
             }
         }
-        // Legacy fallback.
         val wm = wm ?: return null
         return try {
             wm.connectionInfo?.ssid?.trim('"')?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
+    }
+
+    private fun ssidEq(a: String?, b: String?): Boolean {
+        val x = a?.trim()?.trim('"')?.lowercase() ?: return false
+        val y = b?.trim()?.trim('"')?.lowercase() ?: return false
+        if (x.isEmpty() || y.isEmpty() || x == "<unknown ssid>" || y == "<unknown ssid>") return false
+        return x == y
     }
 
     // ---------------- status ----------------

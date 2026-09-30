@@ -437,6 +437,87 @@ class MainActivity : AppCompatActivity() {
             else -> getString(R.string.btn_train_route)
         }
         trainBtn.setOnClickListener { toggleTrain(b) }
+        val wifiBtn = item.findViewById<com.google.android.material.button.MaterialButton>(R.id.btn_wifi_rest)
+        wifiBtn.text = if (b.wifiSsid.isBlank()) getString(R.string.btn_wifi_rest)
+        else "${b.wifiSsid} · ${rssiRestLabel(b.wifiRssiMin)}"
+        wifiBtn.setOnClickListener { showWifiRestDialog(b) }
+    }
+
+    private fun rssiRestLabel(min: Int): String = when {
+        min >= -50 -> getString(R.string.wifi_lvl_vstrong)
+        min >= -60 -> getString(R.string.wifi_lvl_strong)
+        min >= -70 -> getString(R.string.wifi_lvl_ok)
+        else -> getString(R.string.wifi_lvl_weak)
+    }
+
+    private fun showWifiRestDialog(b: Barrier) {
+        val levels = intArrayOf(-50, -60, -70, -80)
+        val labels = arrayOf(
+            getString(R.string.wifi_lvl_vstrong) + " (−50)",
+            getString(R.string.wifi_lvl_strong) + " (−60)",
+            getString(R.string.wifi_lvl_ok) + " (−70)",
+            getString(R.string.wifi_lvl_weak) + " (−80)"
+        )
+        val d = resources.displayMetrics.density
+        val p = (16 * d).toInt()
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(p, p, p, p)
+        }
+        val ssidEt = EditText(this).apply {
+            hint = getString(R.string.hint_wifi_manual)
+            setText(b.wifiSsid)
+        }
+        col.addView(ssidEt)
+        val useCur = com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.btn_wifi_current)
+            isAllCaps = false
+            setOnClickListener {
+                val s = latestStatus?.wifiSsid
+                if (!s.isNullOrBlank()) ssidEt.setText(s)
+            }
+        }
+        col.addView(useCur)
+        col.addView(TextView(this).apply {
+            text = getString(R.string.wifi_rest_level)
+            setPadding(0, (12 * d).toInt(), 0, (4 * d).toInt())
+        })
+        val group = android.widget.RadioGroup(this).apply { orientation = LinearLayout.VERTICAL }
+        var checked = levels.indexOfFirst { it == b.wifiRssiMin }.let { if (it < 0) 2 else it }
+        labels.forEachIndexed { i, lab ->
+            group.addView(android.widget.RadioButton(this).apply {
+                id = android.view.View.generateViewId()
+                text = lab
+                isChecked = i == checked
+                tag = levels[i]
+            })
+        }
+        col.addView(group)
+        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
+            .setTitle(R.string.wifi_rest_title)
+            .setView(col)
+            .setNegativeButton(R.string.btn_cancel, null)
+            .setNeutralButton(R.string.btn_wifi_clear) { _, _ ->
+                saveWifiRest(b.id, "", -70)
+            }
+            .setPositiveButton(R.string.btn_save) { _, _ ->
+                val id = group.checkedRadioButtonId
+                val btn = group.findViewById<android.widget.RadioButton>(id)
+                val min = (btn?.tag as? Int) ?: -70
+                saveWifiRest(b.id, ssidEt.text.toString().trim().trim('"'), min)
+            }
+            .show()
+    }
+
+    private fun saveWifiRest(id: String, ssid: String, rssiMin: Int) {
+        val list = BarrierStore.load(this).toMutableList()
+        val idx = list.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        list[idx].wifiSsid = ssid
+        list[idx].wifiRssiMin = rssiMin
+        BarrierStore.save(this, list)
+        renderBarriers()
+        startServiceRefresh()
     }
 
     private fun toggleTrain(b: Barrier) {
@@ -786,7 +867,9 @@ class MainActivity : AppCompatActivity() {
                 autoCall = existing.autoCall,
                 lastTriggeredAt = existing.lastTriggeredAt,
                 repeatIntervalSec = rep,
-                icon = ic
+                icon = ic,
+                wifiSsid = existing.wifiSsid,
+                wifiRssiMin = existing.wifiRssiMin
             )
             val idx = list.indexOfFirst { it.id == existing.id }
             if (idx >= 0) list[idx] = b

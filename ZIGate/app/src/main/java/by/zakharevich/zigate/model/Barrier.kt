@@ -22,8 +22,11 @@ data class Barrier(
     // How often to re-dial while the phone stays inside the zone (in seconds).
     // Range 5..180 (5s .. 3min). Default 60s (1 minute).
     var repeatIntervalSec: Int = 60,
-    // Which barrier icon to show. One of "gate1".."gate5".
-    var icon: String = "gate1"
+    var icon: String = "gate1",
+    /** Home/office SSID: at this signal, GPS pause (rest). Empty = none. */
+    var wifiSsid: String = "",
+    /** Pause when RSSI ≥ this (dBm). -70 = норма, -55 = сильный. */
+    var wifiRssiMin: Int = -70
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -37,6 +40,8 @@ data class Barrier(
         put("lastTriggeredAt", lastTriggeredAt)
         put("repeatIntervalSec", repeatIntervalSec)
         put("icon", icon)
+        put("wifiSsid", wifiSsid)
+        put("wifiRssiMin", wifiRssiMin)
     }
 
     /** Compact JSON for sharing (no id / lastTriggered). */
@@ -49,6 +54,8 @@ data class Barrier(
         put("autoCall", autoCall)
         put("repeatIntervalSec", repeatIntervalSec)
         put("icon", icon)
+        put("wifiSsid", wifiSsid)
+        put("wifiRssiMin", wifiRssiMin)
     }
 
     companion object {
@@ -63,7 +70,9 @@ data class Barrier(
             autoCall = o.optBoolean("autoCall", true),
             lastTriggeredAt = 0L,
             repeatIntervalSec = o.optInt("repeatIntervalSec", 60),
-            icon = o.optString("icon", "gate1")
+            icon = o.optString("icon", "gate1"),
+            wifiSsid = o.optString("wifiSsid", ""),
+            wifiRssiMin = o.optInt("wifiRssiMin", -70)
         )
 
         fun fromJson(o: JSONObject): Barrier = Barrier(
@@ -77,7 +86,9 @@ data class Barrier(
             autoCall = o.optBoolean("autoCall", true),
             lastTriggeredAt = o.optLong("lastTriggeredAt", 0L),
             repeatIntervalSec = o.optInt("repeatIntervalSec", 60),
-            icon = o.optString("icon", "gate1")
+            icon = o.optString("icon", "gate1"),
+            wifiSsid = o.optString("wifiSsid", ""),
+            wifiRssiMin = o.optInt("wifiRssiMin", -70)
         )
     }
 }
