@@ -1087,7 +1087,9 @@ class MainActivity : AppCompatActivity() {
         fun populate(candidates: List<String>) {
             listContainer.removeAllViews()
             // show selected (even if not currently visible) + candidates + manual
-            val all = (candidates + selected + manuallyAdded)
+            val cur = latestStatus?.wifiSsid?.trim()?.trim('"').orEmpty()
+            val all = (candidates + selected + manuallyAdded + listOf(cur))
+                .map { it.trim().trim('"') }
                 .filter { it.isNotBlank() }
                 .distinct()
                 .sorted()
@@ -1273,7 +1275,7 @@ class MainActivity : AppCompatActivity() {
             when {
                 ssid == null -> getString(R.string.status_none)
                 s.pausedByWifi -> "$ssid$db$qual · пауза"
-                else -> "$ssid$db$qual"
+                else -> "$ssid$db$qual · нет паузы"
             }
         }
         findViewById<TextView>(R.id.status_lastfix).text =

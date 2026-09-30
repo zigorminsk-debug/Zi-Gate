@@ -38,6 +38,7 @@ import by.zakharevich.zigate.util.DialHelper
 import by.zakharevich.zigate.util.KeepAlive
 import by.zakharevich.zigate.util.MotionWatch
 import by.zakharevich.zigate.util.BaroWatch
+import by.zakharevich.zigate.util.WifiNames
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
 import kotlin.math.max
@@ -1133,10 +1134,11 @@ class BarrierService : Service() {
         val prevSsid = currentSsid
         currentSsid = currentWifiSsid()
         currentRssi = currentWifiRssi()
+        wifiPause = wifiPauseSet()
         val ssid = currentSsid
         val listed = Settings.isWifiGateEnabled(this) &&
                 ssid != null &&
-                wifiPause.any { ssidEq(it, ssid) }
+                wifiPause.any { WifiNames.same(it, ssid) }
         val rssi = currentRssi
         val strongEnough = when {
             !listed -> false
@@ -1145,11 +1147,13 @@ class BarrierService : Service() {
             else -> rssi >= WIFI_PAUSE_RSSI_ON
         }
         val barrierRest = ssid != null && rssi != null && barriers.any { b ->
-            b.wifiSsid.isNotBlank() && ssidEq(b.wifiSsid, ssid) && rssi >= b.wifiRssiMin
+            b.wifiSsid.isNotBlank() && WifiNames.same(b.wifiSsid, ssid) && rssi >= b.wifiRssiMin
         }
-        // Strong listed / barrier rest Wi-Fi pauses GPS even on charge
-        // (home AP at −53 dBm must not keep 1 s dual).
         pausedByWifi = (listed && strongEnough) || barrierRest
+        if (pausedByWifi) {
+            warmupRemaining = 0
+            warmupFixes.clear()
+        }
 
         val disconnected = prevSsid != null && currentSsid == null
         val ssidChanged = prevSsid != null && currentSsid != null && prevSsid != currentSsid
@@ -1220,12 +1224,7 @@ class BarrierService : Service() {
         }
     }
 
-    private fun ssidEq(a: String?, b: String?): Boolean {
-        val x = a?.trim()?.trim('"')?.lowercase() ?: return false
-        val y = b?.trim()?.trim('"')?.lowercase() ?: return false
-        if (x.isEmpty() || y.isEmpty() || x == "<unknown ssid>" || y == "<unknown ssid>") return false
-        return x == y
-    }
+    private fun ssidEq(a: String?, b: String?): Boolean = WifiNames.same(a, b)
 
     // ---------------- status ----------------
     private fun publishStatus() {
