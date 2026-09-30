@@ -1307,6 +1307,20 @@ class MainActivity : AppCompatActivity() {
                 "${s.heightM.toInt()} м · ${s.floor} эт."
             else -> "${s.heightM.toInt()} м · земля"
         }
+        findViewById<TextView>(R.id.status_motion).text = run {
+            val a = s.accelMs2
+            val g = s.gyroRad
+            val ag = if (a != null) "a ${"%.1f".format(a)}" else ""
+            val gg = if (g != null) " ω ${"%.2f".format(g)}" else ""
+            val st = when {
+                s.sensorRest -> "покой"
+                (a ?: 0f) > 0.4f || (g ?: 0f) > 0.2f -> "тронулись"
+                else -> "есть ход"
+            }
+            "$st · $ag$gg".trim(' ', '·')
+        }
+        findViewById<TextView>(R.id.status_eta).text =
+            if (s.etaSec != null) "${s.etaSec} с" else getString(R.string.status_none)
         findViewById<TextView>(R.id.status_poll).text =
             if (s.running && !s.pausedByWifi) "${s.pollPeriodMs / 1000f}s" else "-"
         // Keep the card distances in sync with the same service fix.

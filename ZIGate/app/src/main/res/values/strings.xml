@@ -116,6 +116,8 @@
     <string name="train_stopped">Обучение остановлено</string>
     <string name="route_ready">маршрут готов (%1$d поездки)</string>
     <string name="route_learning">урок %1$d/2</string>
+    <string name="status_motion">Движение</string>
+    <string name="status_eta">До зоны</string>
     <string name="status_poll">Период опроса</string>
     <string name="status_none">—</string>
     <string name="status_off">выкл</string>

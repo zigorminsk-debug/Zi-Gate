@@ -26,7 +26,11 @@ data class ServiceStatus(
     val heightM: Float? = null,
     val floor: Int? = null,
     val onRoute: Boolean = false,
-    val trainingName: String? = null
+    val trainingName: String? = null,
+    val accelMs2: Float? = null,
+    val gyroRad: Float? = null,
+    val sensorRest: Boolean = false,
+    val etaSec: Int? = null
 ) {
     companion object {
         fun empty() = ServiceStatus(

@@ -116,6 +116,8 @@ class BarrierService : Service() {
     private var pendingMotionBurst = false
     private var charging = false
     private var onLearnedRoute = false
+    /** After a light: gyro/accel said we pulled away. */
+    private var pullAwayUntilElapsed: Long = 0L
 
     private var barriers: MutableList<Barrier> = mutableListOf()
     private var wifiPause: Set<String> = emptySet()
@@ -199,6 +201,8 @@ class BarrierService : Service() {
         private const val NET_FAR_BOUNDARY_M = 1000f
         /** GPS earlier when on a learned commute cell. */
         private const val GPS_REGIME_ROUTE_M = 700f
+        private const val CITY_PULL_MS = 11f
+        private const val PULL_AWAY_MS = 90_000L
 
         private val statusListeners = CopyOnWriteArrayList<(ServiceStatus) -> Unit>()
 
@@ -270,7 +274,7 @@ class BarrierService : Service() {
         )
         charging = isChargingNow()
         RouteMemory.restoreTraining(this)
-        motionWatch = MotionWatch(this) { onSensorMoved() }
+        motionWatch = MotionWatch(this, { onSensorMoved() }, { publishStatus() })
         motionWatch?.start()
         baroWatch = BaroWatch(this).also { it.start() }
 
@@ -280,11 +284,18 @@ class BarrierService : Service() {
         watchdog.postDelayed(watchdogTick, WATCHDOG_MS)
     }
 
+    private fun pullingAway(): Boolean =
+        pullAwayUntilElapsed != 0L && SystemClock.elapsedRealtime() < pullAwayUntilElapsed
+
     private fun onSensorMoved() {
         lastMotionElapsed = SystemClock.elapsedRealtime()
-        forceGpsUntilElapsed = SystemClock.elapsedRealtime() + 45_000L
+        pullAwayUntilElapsed = SystemClock.elapsedRealtime() + PULL_AWAY_MS
+        forceGpsUntilElapsed = SystemClock.elapsedRealtime() + PULL_AWAY_MS
         val d = distanceToNearest() ?: 999f
-        if (d > 200f) startWarmup() else updateLocationRegistration()
+        if (d in 30f..2500f && lastRadialVelocity > -2f) {
+            lastRadialVelocity = -CITY_PULL_MS
+        }
+        if (d > 80f) startWarmup() else updateLocationRegistration()
         publishStatus()
     }
 
@@ -586,7 +597,7 @@ class BarrierService : Service() {
         val recentlyMoving = lastMotionElapsed != 0L &&
                 SystemClock.elapsedRealtime() - lastMotionElapsed < 45_000L
         val wantGps = !accelRest && (charging || warmupRemaining > 0 || forcingGps() ||
-                approaching ||
+                approaching || pullingAway() ||
                 RouteMemory.isTraining() ||
                 (onLearnedRoute && recentlyMoving && (dist == null || dist < 1500f)) ||
                 (recentlyMoving && (dist == null || dist < 800f)))
@@ -847,7 +858,7 @@ class BarrierService : Service() {
         if (fromWarmup || firstFix || distance == null ||
             prevDistToNearest == null || prevNearestId != nearest?.id
         ) {
-            lastRadialVelocity = 0f
+            if (!pullingAway()) lastRadialVelocity = 0f
         } else if (acc > VELOCITY_ACC_MAX_M) {
             lastRadialVelocity *= 0.5f
         } else {
@@ -1281,7 +1292,19 @@ class BarrierService : Service() {
                 heightM = baroWatch?.heightM(),
                 floor = baroWatch?.floor(),
                 onRoute = onLearnedRoute,
-                trainingName = RouteMemory.trainingName
+                trainingName = RouteMemory.trainingName,
+                accelMs2 = motionWatch?.accelMs2,
+                gyroRad = motionWatch?.gyroRad,
+                sensorRest = motionWatch?.isRest() == true,
+                etaSec = run {
+                    val d = dist ?: return@run null
+                    val r = nearest?.radius ?: 0f
+                    val beyond = (d - r).coerceAtLeast(0f)
+                    val v = if (lastRadialVelocity < -0.4f) -lastRadialVelocity
+                    else if (pullingAway()) CITY_PULL_MS else 0f
+                    if (v < 0.4f || beyond < 1f) null
+                    else (beyond / v).toInt().coerceIn(1, 600)
+                }
             )
         )
     }
