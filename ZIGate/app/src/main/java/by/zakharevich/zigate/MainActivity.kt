@@ -1342,44 +1342,81 @@ class MainActivity : AppCompatActivity() {
     private fun showHelp() {
         val d = resources.displayMetrics.density
         val p = (16 * d).toInt()
-        val col = LinearLayout(this).apply {
+        val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(p, p, p, p)
+            setPadding(p, p / 2, p, p)
         }
-        col.addView(TextView(this).apply {
+        body.addView(TextView(this).apply {
             text = "ZI Gate v${BuildConfig.VERSION_NAME}\n${BuildConfig.DEVELOPER}\n${getString(R.string.about_github)}"
             textSize = 14f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
         })
-        col.addView(com.google.android.material.button.MaterialButton(this).apply {
-            text = getString(R.string.btn_check_update)
-            isAllCaps = false
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lp.topMargin = (12 * d).toInt()
-            lp.bottomMargin = (8 * d).toInt()
-            layoutParams = lp
-            setOnClickListener { checkForAppUpdate(force = true) }
-        })
-        col.addView(TextView(this).apply {
+        body.addView(TextView(this).apply {
             text = getString(R.string.train_how)
             textSize = 14f
             setPadding(0, (8 * d).toInt(), 0, (8 * d).toInt())
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
         })
-        col.addView(TextView(this).apply {
+        body.addView(TextView(this).apply {
             text = getString(R.string.help_body)
             textSize = 15f
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
         })
-        val scroll = ScrollView(this).apply { addView(col) }
-        AlertDialog.Builder(this, R.style.Theme_ZIGate_Dialog)
-            .setTitle(R.string.help_title)
-            .setView(scroll)
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(body)
+        }
+        val cancelBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.btn_cancel)
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            setBackgroundColor(0)
+        }
+        val updateBtn = com.google.android.material.button.MaterialButton(this).apply {
+            text = getString(R.string.update_now)
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white_on_primary))
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.primary))
+        }
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(p, (6 * d).toInt(), p, (12 * d).toInt())
+            addView(cancelBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(
+                updateBtn,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f)
+                    .apply { setMargins((10 * d).toInt(), 0, 0, 0) }
+            )
+        }
+        val title = TextView(this).apply {
+            text = getString(R.string.help_title)
+            textSize = 20f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+            setPadding(p, (18 * d).toInt(), p, (8 * d).toInt())
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.dialog_bg)
+            addView(title)
+            addView(
+                scroll,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+            )
+            addView(btnRow)
+        }
+        val dialog = android.app.Dialog(this, R.style.Theme_ZIGate_Dialog)
+        cancelBtn.setOnClickListener { dialog.dismiss() }
+        updateBtn.setOnClickListener { checkForAppUpdate(force = true) }
+        dialog.setContentView(root)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        val dm = resources.displayMetrics
+        dialog.window?.attributes = dialog.window?.attributes?.apply {
+            width = dm.widthPixels
+            height = (dm.heightPixels * 0.82f).toInt()
+        }
+        dialog.show()
     }
 
     private fun showSendPicker() {
