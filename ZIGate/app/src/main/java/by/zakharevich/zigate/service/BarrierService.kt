@@ -897,6 +897,10 @@ class BarrierService : Service() {
             val acc = if (loc.hasAccuracy()) loc.accuracy else 99f
             val d = distance ?: 999f
             baroWatch?.noteGround(loc.speed, acc, outdoors = d > 30f || loc.speed >= 2f)
+            val started = motionWatch?.noteGps(loc.speed, acc, gps = true) == true
+            if (!started && loc.speed < 0.4f && acc <= 25f) {
+                pullAwayUntilElapsed = 0L
+            }
         }
     }
 
@@ -1304,7 +1308,9 @@ class BarrierService : Service() {
                     else if (pullingAway()) CITY_PULL_MS else 0f
                     if (v < 0.4f || beyond < 1f) null
                     else (beyond / v).toInt().coerceIn(1, 600)
-                }
+                },
+                restAccel = motionWatch?.restAccel,
+                restGyro = motionWatch?.restGyro
             )
         )
     }

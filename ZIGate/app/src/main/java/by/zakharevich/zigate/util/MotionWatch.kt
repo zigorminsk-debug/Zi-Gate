@@ -11,11 +11,13 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
- * Accel + gyro: rest at a light vs the car pulling away.
- * Tiny engine wobble is ignored.
+ * Rest vs pull-away. GPS speed is the teacher: while GPS says we are
+ * stopped, accel/gyro noise is learned as the idle baseline. A start is
+ * only accepted if sensors stay above that baseline, or GPS speed rises.
  */
 class MotionWatch(
     context: Context,
@@ -35,14 +37,25 @@ class MotionWatch(
         private set
     var gyroRad: Float = 0f
         private set
+    /** Learned idle noise while GPS speed ≈ 0. */
+    var restAccel: Float = 0.25f
+        private set
+    var restGyro: Float = 0.12f
+        private set
+
     private var lastMoveElapsed = SystemClock.elapsedRealtime()
-    private var rest = false
+    private var rest = true
     private var started = false
     private var lastUi = 0L
+    private var aboveCount = 0
+    private var lastGpsElapsed = 0L
+    private var lastGpsSpeed = -1f
+    private var gpsStoppedSince = 0L
 
     private val trigger = object : TriggerEventListener() {
         override fun onTrigger(event: TriggerEvent?) {
-            markMoved()
+            // Only a hint: wait for GPS or a sustained sensor burst.
+            aboveCount = max(aboveCount, HOLD_SAMPLES / 2)
             armSignificant()
         }
     }
@@ -51,7 +64,7 @@ class MotionWatch(
         if (started) return
         started = true
         lastMoveElapsed = SystemClock.elapsedRealtime()
-        rest = false
+        rest = true
         accel?.let { sm?.registerListener(this, it, SensorManager.SENSOR_DELAY_UI, handler) }
         gyro?.let { sm?.registerListener(this, it, SensorManager.SENSOR_DELAY_UI, handler) }
         armSignificant()
@@ -63,9 +76,43 @@ class MotionWatch(
         runCatching { significant?.let { sm?.cancelTriggerSensor(trigger, it) } }
     }
 
-    fun isRest(): Boolean {
-        tickRest()
-        return rest
+    fun isRest(): Boolean = rest
+
+    /**
+     * GPS lesson. Speed < 0.4 m/s with a decent fix = standing (learn noise).
+     * Speed ≥ 1.2 m/s = moving.
+     */
+    fun noteGps(speedMs: Float, accuracyM: Float, gps: Boolean): Boolean {
+        if (!gps || accuracyM > 25f) return false
+        val now = SystemClock.elapsedRealtime()
+        lastGpsElapsed = now
+        lastGpsSpeed = speedMs
+        if (speedMs < 0.4f) {
+            if (gpsStoppedSince == 0L) gpsStoppedSince = now
+            if (now - gpsStoppedSince > 1_500L) {
+                restAccel = restAccel * 0.92f + emaAccel * 0.08f
+                restGyro = restGyro * 0.92f + emaGyro * 0.08f
+                restAccel = restAccel.coerceIn(0.12f, 0.9f)
+                restGyro = restGyro.coerceIn(0.05f, 0.45f)
+                if (!rest) {
+                    rest = true
+                    aboveCount = 0
+                }
+            }
+            return false
+        }
+        gpsStoppedSince = 0L
+        if (speedMs >= 1.2f) {
+            val was = rest
+            rest = false
+            lastMoveElapsed = now
+            aboveCount = 0
+            if (was) {
+                onMoved()
+                return true
+            }
+        }
+        return false
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -77,7 +124,7 @@ class MotionWatch(
                 val mag = sqrt(x * x + y * y + z * z)
                 val linear = abs(mag - SensorManager.GRAVITY_EARTH)
                 accelMs2 = linear
-                emaAccel = emaAccel * 0.88f + linear * 0.12f
+                emaAccel = emaAccel * 0.9f + linear * 0.1f
             }
             Sensor.TYPE_GYROSCOPE -> {
                 val x = event.values[0]
@@ -85,15 +132,39 @@ class MotionWatch(
                 val z = event.values[2]
                 val w = sqrt(x * x + y * y + z * z)
                 gyroRad = w
-                emaGyro = emaGyro * 0.85f + w * 0.15f
+                emaGyro = emaGyro * 0.88f + w * 0.12f
             }
             else -> return
         }
-        val pull = emaAccel > MOVE_EMA || accelMs2 > MOVE_PEAK ||
-                emaGyro > GYRO_EMA || gyroRad > GYRO_PEAK
-        if (pull) markMoved() else tickRest()
+
         val now = SystemClock.elapsedRealtime()
-        if (now - lastUi > 800L) {
+        val gpsFresh = lastGpsElapsed != 0L && now - lastGpsElapsed < 8_000L
+        val gpsStopped = gpsFresh && lastGpsSpeed >= 0f && lastGpsSpeed < 0.4f &&
+                gpsStoppedSince != 0L && now - gpsStoppedSince > 1_500L
+
+        val aNeed = restAccel + 0.55f
+        val gNeed = restGyro + 0.30f
+        val burst = emaAccel > aNeed && (emaGyro > gNeed || emaAccel > restAccel + 1.1f)
+        if (gpsStopped) {
+            aboveCount = 0
+        } else if (burst) {
+            aboveCount++
+            if (aboveCount >= HOLD_SAMPLES && rest) {
+                rest = false
+                lastMoveElapsed = now
+                aboveCount = 0
+                onMoved()
+            }
+        } else {
+            aboveCount = 0
+            if (!rest && now - lastMoveElapsed > REST_AFTER_MS &&
+                (!gpsFresh || lastGpsSpeed < 0.5f)
+            ) {
+                rest = true
+            }
+        }
+
+        if (now - lastUi > 900L) {
             lastUi = now
             onSample?.invoke()
         }
@@ -101,30 +172,13 @@ class MotionWatch(
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    private fun markMoved() {
-        val wasRest = rest
-        lastMoveElapsed = SystemClock.elapsedRealtime()
-        rest = false
-        if (wasRest) onMoved()
-    }
-
-    private fun tickRest() {
-        if (rest) return
-        if (SystemClock.elapsedRealtime() - lastMoveElapsed > REST_AFTER_MS) {
-            rest = true
-        }
-    }
-
     private fun armSignificant() {
         val s = significant ?: return
         runCatching { sm?.requestTriggerSensor(trigger, s) }
     }
 
     companion object {
-        private const val REST_AFTER_MS = 18_000L
-        private const val MOVE_EMA = 0.38f
-        private const val MOVE_PEAK = 0.95f
-        private const val GYRO_EMA = 0.22f
-        private const val GYRO_PEAK = 0.55f
+        private const val REST_AFTER_MS = 20_000L
+        private const val HOLD_SAMPLES = 14
     }
 }

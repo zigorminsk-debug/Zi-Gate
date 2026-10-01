@@ -1314,10 +1314,12 @@ class MainActivity : AppCompatActivity() {
             val gg = if (g != null) " ω ${"%.2f".format(g)}" else ""
             val st = when {
                 s.sensorRest -> "покой"
-                (a ?: 0f) > 0.4f || (g ?: 0f) > 0.2f -> "тронулись"
+                (a ?: 0f) > (s.restAccel ?: 0.4f) + 0.5f -> "тронулись"
                 else -> "есть ход"
             }
-            "$st · $ag$gg".trim(' ', '·')
+            val th = if (s.restAccel != null)
+                " порог ${"%.1f".format(s.restAccel)}" else ""
+            "$st · $ag$gg$th".trim(' ', '·')
         }
         findViewById<TextView>(R.id.status_eta).text =
             if (s.etaSec != null) "${s.etaSec} с" else getString(R.string.status_none)
